@@ -69,6 +69,7 @@
   // ---------------------------------------------------------------------------
   const state = {
     fragments: 0,
+    board: 1,          // tableau courant (progression sans fin)
     ballDamage: 1,
     clickDamage: 1,
     speedMul: 1,
@@ -83,7 +84,9 @@
     balls: [],
     blocks: [],
     particles: [],
-    floaters: [],     // floating "+N" fragment texts
+    floaters: [],     // floating "+N" / "-N" texts
+    announce: null,   // bannière centrale (ex : « Tableau 3 »)
+    boardTimer: 0.6,  // délai avant de générer le tableau suivant
     cols: 0,
     rows: 0,
     cell: 0,
@@ -113,23 +116,30 @@
   // ---------------------------------------------------------------------------
   // Grid of destructible blocks
   // ---------------------------------------------------------------------------
+  function buildBlocks() {
+    runtime.blocks = [];
+    for (let r = 0; r < runtime.rows; r++) {
+      for (let c = 0; c < runtime.cols; c++) runtime.blocks.push(makeBlock(r, c));
+    }
+    runtime.boardTimer = 0.6;
+  }
+
   function layoutGrid() {
     const target = 56;                       // desired block size in px
     const cols = Math.max(6, Math.floor(W / target));
     const cell = Math.min(72, Math.floor(W / cols));
     const rows = Math.max(4, Math.floor((H * 0.55) / cell));
+    // On ne reconstruit que si le nombre de COLONNES change (largeur / rotation).
+    // Ignorer les variations de hauteur évite de réinitialiser le tableau quand
+    // la barre d'URL mobile apparaît/disparaît.
+    const colsChanged = cols !== runtime.cols;
     runtime.cols = cols;
     runtime.rows = rows;
     runtime.cell = cell;
     runtime.marginX = (W - cols * cell) / 2;
     runtime.marginTop = cell * 0.6;
 
-    if (runtime.blocks.length === 0) {
-      runtime.blocks = [];
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) runtime.blocks.push(makeBlock(r, c));
-      }
-    }
+    if (runtime.blocks.length === 0 || colsChanged) buildBlocks();
   }
 
   function blockRect(r, c) {
@@ -143,8 +153,9 @@
   }
 
   function makeBlock(r, c) {
-    // Deeper rows (further down) are a touch tougher, giving gentle progression.
-    const maxHp = 2 + Math.floor(r / 2) + Math.floor(Math.random() * 2);
+    // Les rangées basses sont un peu plus dures, et chaque tableau ajoute des PV :
+    // progression douce mais sans fin.
+    const maxHp = 2 + Math.floor(r / 2) + Math.floor(Math.random() * 2) + (state.board - 1);
     return {
       r, c,
       hp: maxHp,
@@ -152,7 +163,6 @@
       color: BLOCK_COLORS[(r + c) % BLOCK_COLORS.length],
       hit: 0,            // hit-flash timer
       alive: true,
-      respawn: 0,        // seconds until it comes back
     };
   }
 
@@ -181,7 +191,6 @@
   // ---------------------------------------------------------------------------
   function breakBlock(block) {
     block.alive = false;
-    block.respawn = 3 + Math.random() * 3;
     const reward = Math.round(block.maxHp * 2 * state.yieldMul);
     state.fragments += reward;
     runtime.fragTimestamps.push(performance.now());
@@ -194,6 +203,7 @@
       text: "+" + reward,
       life: 1,
       color: "#ffcf6b",
+      size: 16,
     });
     updateHud();
   }
@@ -203,7 +213,27 @@
     block.hp -= dmg;
     block.hit = 1;
     spawnParticles(cx, cy, block.color, 4);
+    // Affiche les dégâts infligés à chaque coup.
+    runtime.floaters.push({
+      x: cx,
+      y: cy - 6,
+      text: "-" + dmg,
+      life: 0.7,
+      color: "#ffffff",
+      size: 13,
+    });
     if (block.hp <= 0) breakBlock(block);
+  }
+
+  // Tableau entièrement nettoyé -> on en génère un nouveau, un peu plus coriace.
+  function nextBoard() {
+    state.board += 1;
+    const bonus = Math.round(20 * state.board * state.yieldMul);
+    state.fragments += bonus;
+    buildBlocks();
+    runtime.announce = { text: "Tableau " + state.board, sub: "+" + bonus + " fragments", life: 1.8 };
+    save();
+    updateHud();
   }
 
   // ---------------------------------------------------------------------------
@@ -272,16 +302,23 @@
       collideBallBlocks(ball, dt);
     }
 
-    // Respawn timers & hit flashes
+    // Décroissance du flash d'impact.
     for (const block of runtime.blocks) {
       if (block.hit > 0) block.hit = Math.max(0, block.hit - dt * 6);
-      if (!block.alive) {
-        block.respawn -= dt;
-        if (block.respawn <= 0) {
-          const fresh = makeBlock(block.r, block.c);
-          Object.assign(block, fresh);
-        }
-      }
+    }
+
+    // Progression par tableaux : tout casser génère le tableau suivant.
+    if (runtime.blocks.length && runtime.blocks.every((b) => !b.alive)) {
+      runtime.boardTimer -= dt;
+      if (runtime.boardTimer <= 0) nextBoard();
+    } else {
+      runtime.boardTimer = 0.6;
+    }
+
+    // Fondu de la bannière centrale.
+    if (runtime.announce) {
+      runtime.announce.life -= dt;
+      if (runtime.announce.life <= 0) runtime.announce = null;
     }
 
     // Particles
@@ -352,6 +389,16 @@
         ctx.lineTo(rect.x + rect.w * 0.35, rect.y + rect.h);
         ctx.stroke();
         ctx.restore();
+
+        // PV restants, affichés dès la première touche.
+        ctx.save();
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = "#0d1117";
+        ctx.font = `800 ${Math.round(rect.h * 0.42)}px Inter, system-ui, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String(block.hp), rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
+        ctx.restore();
       }
     }
 
@@ -382,13 +429,33 @@
       ctx.shadowBlur = 0;
     }
 
-    // Floating fragment texts
+    // Floating texts ("+N" fragments, "-N" damage)
     ctx.textAlign = "center";
-    ctx.font = "700 15px Inter, system-ui, sans-serif";
+    ctx.textBaseline = "alphabetic";
     for (const f of runtime.floaters) {
       ctx.globalAlpha = Math.max(0, f.life);
       ctx.fillStyle = f.color;
+      ctx.font = `700 ${f.size || 15}px Inter, system-ui, sans-serif`;
       ctx.fillText(f.text, f.x, f.y);
+    }
+    ctx.globalAlpha = 1;
+
+    // Central banner ("Tableau N")
+    if (runtime.announce) {
+      const a = runtime.announce;
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, a.life * 1.4);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#56d3c9";
+      ctx.font = "800 34px Inter, system-ui, sans-serif";
+      ctx.fillText(a.text, W / 2, H * 0.36);
+      if (a.sub) {
+        ctx.fillStyle = "#ffcf6b";
+        ctx.font = "700 18px Inter, system-ui, sans-serif";
+        ctx.fillText(a.sub, W / 2, H * 0.36 + 32);
+      }
+      ctx.restore();
     }
     ctx.globalAlpha = 1;
   }
@@ -514,10 +581,24 @@
   // ---------------------------------------------------------------------------
   const fragEl = document.getElementById("fragments");
   const fpsEl = document.getElementById("fps");
+  const boardEl = document.getElementById("board");
 
   function updateHud() {
     fragEl.textContent = Math.floor(state.fragments).toLocaleString("fr-FR");
+    if (boardEl) boardEl.textContent = state.board;
     refreshShopAffordability();
+  }
+
+  // Debug : cliquer le titre du jeu double les fragments.
+  const brandEl = document.querySelector(".brand");
+  if (brandEl) {
+    brandEl.style.cursor = "pointer";
+    brandEl.title = "Debug : doubler les fragments";
+    brandEl.addEventListener("click", () => {
+      state.fragments = Math.max(1, Math.floor(state.fragments)) * 2;
+      save();
+      updateHud();
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -527,6 +608,7 @@
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify({
         fragments: state.fragments,
+        board: state.board,
         ballDamage: state.ballDamage,
         clickDamage: state.clickDamage,
         speedMul: state.speedMul,
@@ -544,6 +626,7 @@
       const data = JSON.parse(raw);
       Object.assign(state, {
         fragments: data.fragments ?? 0,
+        board: data.board ?? 1,
         ballDamage: data.ballDamage ?? 1,
         clickDamage: data.clickDamage ?? 1,
         speedMul: data.speedMul ?? 1,
@@ -598,6 +681,9 @@
     renderShop();
     updateHud();
     window.addEventListener("resize", resize);
+    // Re-mesure dès que la boîte du canvas change (barre du bas mobile, rotation,
+    // réagencement une fois la boutique en place) — garde les balles bien rondes.
+    if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
     requestAnimationFrame((t) => { last = t; frame(t); });
   }
 

@@ -8,10 +8,13 @@ régénère sans fin — la boucle de jeu ne s'arrête jamais, elle ne fait que 
 ## Boucle de jeu
 
 1. Une ou plusieurs balles rebondissent sur les murs et les blocs.
-2. Chaque rebond (ou chaque clic) retire des points de vie à un bloc.
-3. Un bloc à 0 PV se brise, verse des fragments et réapparaît après quelques secondes.
-4. Les fragments achètent des améliorations qui accélèrent la récolte.
-5. Retour à l'étape 1, indéfiniment.
+2. Chaque rebond (ou chaque clic) retire des points de vie à un bloc ; les dégâts
+   et les PV restants s'affichent sur le bloc.
+3. Un bloc à 0 PV se brise et verse des fragments.
+4. Quand **tout le tableau** est nettoyé, un nouveau tableau (plus coriace) est
+   généré et un bonus de fragments est versé.
+5. Les fragments achètent des améliorations qui accélèrent la récolte.
+6. Retour à l'étape 1, indéfiniment.
 
 ## Lancer le jeu
 
@@ -36,11 +39,11 @@ python3 -m http.server 8000
 
 Le code est encapsulé dans une IIFE (aucune variable globale) et organisé en sections :
 
-- **`state`** — progression persistée (fragments, niveaux d'améliorations, multiplicateurs).
-- **`runtime`** — données éphémères non sauvegardées (balles, blocs, particules, textes flottants).
-- **Grille** (`layoutGrid`, `makeBlock`, `blockRect`) — dispose les blocs et calcule leur géométrie de façon responsive.
+- **`state`** — progression persistée (fragments, tableau courant, niveaux d'améliorations, multiplicateurs).
+- **`runtime`** — données éphémères non sauvegardées (balles, blocs, particules, textes flottants, bannière).
+- **Grille** (`layoutGrid`, `buildBlocks`, `makeBlock`, `blockRect`) — dispose les blocs et calcule leur géométrie de façon responsive.
 - **Physique** (`collideBallBlocks`) — collision cercle/rectangle résolue par axe de moindre pénétration.
-- **Économie** (`breakBlock`, `damageBlock`) — dégâts, récompenses en fragments, effets visuels.
+- **Économie** (`breakBlock`, `damageBlock`, `nextBoard`) — dégâts, récompenses en fragments, passage au tableau suivant, effets visuels.
 - **Boutique** (`UPGRADES`, `costOf`, `buy`, `renderShop`) — améliorations à coût géométrique.
 - **Rendu** (`render`) — dessine blocs, fissures, particules, balles et textes flottants.
 - **Persistance** (`save`, `load`) — sauvegarde automatique dans `localStorage` (clé `infiniclick.save.v1`).
