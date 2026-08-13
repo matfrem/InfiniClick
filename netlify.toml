@@ -1,4 +1,4 @@
-# Configuration Netlify — site statique servi depuis la racine du dépôt.
-# Aucune étape de build : InfiniClick est du HTML/CSS/JS pur.
+# Netlify configuration — static site served from the repository root.
+# No build step: InfiniClick is pure HTML/CSS/JS.
 [build]
   publish = "."
