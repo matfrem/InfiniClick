@@ -4,11 +4,12 @@
  * The world is a fractal. Every board is one block of the board above it, and
  * every block hides a whole board of its own. You clear a board, zoom out one
  * notch to reveal the meta-board it lived inside (the block you just finished is
- * now destroyed), watch the balls drift to the next block, zoom into it, and
- * clear the board waiting there. The loop never ends — it only nests.
+ * now destroyed), watch the balls drift across the meta-board, dive into the
+ * next block, and clear the board waiting there. Finish a whole meta-board and
+ * you ascend to the next universe — one notch tougher, forever.
  *
- * Balls come in levels: ten balls of a level can be merged into one stronger
- * ball of the next level. Breaking blocks scatters shards you spend on upgrades.
+ * Difficulty grows 10x per meta level, so numbers get large fast; they are
+ * plain JS floats (good to ~1e308) formatted as K / M / B / scientific.
  *
  * Only two boards are ever loaded at once — the one you are playing and its
  * immediate parent — so the infinite stack costs nothing to keep alive.
@@ -17,61 +18,101 @@
   "use strict";
 
   // ---------------------------------------------------------------------------
-  // Constants & palette
+  // Constants & palettes
   // ---------------------------------------------------------------------------
-  const SAVE_KEY = "infiniclick.save.v1";
-  const BLOCK_COLORS = ["#56d3c9", "#8a7dff", "#ffcf6b", "#ff8fab", "#7bd88f"];
-  const BALL_COLORS = ["#56d3c9", "#8a7dff", "#ffcf6b", "#ff8fab", "#7bd88f", "#f5f5f5"];
+  const SAVE_KEY = "infiniclick.save.v2";
   const TAU = Math.PI * 2;
   const MERGE_REQUIRED = 10;   // balls of level N needed to make one level N+1
+  const LEVEL1_CAP = 10;       // max level-1 balls you may own (then you merge)
   const MAX_BALLS = 60;        // hard cap on simultaneous balls (performance)
   const ZOOM_DUR = 0.55;       // seconds a zoom transition lasts
-  const HUNT_GRACE = 0.18;     // seconds balls drift before they can enter a block
-  const BALL_SPEED = 190;      // base ball speed in px/s
+  const HUNT_GRACE = 2.5;      // seconds balls roam the meta-board before diving
+  const ASCEND_DUR = 5;        // seconds the "upper universe" interlude lasts
+  const BALL_SPEED = 200;      // base ball speed in px/s
+  const HP_PER_META = 10;      // each meta level is 10x tougher than the one below
+
+  // Block colour palettes; the active one is chosen by meta rank, so every
+  // universe looks different (it simply cycles after a handful of levels).
+  const PALETTES = [
+    ["#56d3c9", "#8a7dff", "#ffcf6b", "#ff8fab", "#7bd88f"], // aqua & violet
+    ["#ff9f68", "#ffd66b", "#ff6b6b", "#c44dff", "#ff8fab"], // warm ember
+    ["#6bd0ff", "#5b8cff", "#8a7dff", "#63f2d9", "#a0e8ff"], // deep ocean
+    ["#7bd88f", "#b8e986", "#ffe66b", "#63d0a8", "#4fd1c5"], // meadow
+    ["#ff8fab", "#ff6bd0", "#c44dff", "#8a7dff", "#ff9fe0"], // magenta bloom
+    ["#ffd66b", "#ffb347", "#ff8c42", "#ff6b6b", "#f9e784"], // amber sun
+    ["#a0a0ff", "#c9b8ff", "#8affd6", "#7bd8ff", "#d0b0ff"], // pastel nebula
+  ];
+  const BALL_COLORS = ["#56d3c9", "#8a7dff", "#ffcf6b", "#ff8fab", "#7bd88f", "#f5f5f5"];
+
+  function paletteFor(rank) {
+    return PALETTES[((rank % PALETTES.length) + PALETTES.length) % PALETTES.length];
+  }
 
   // ---------------------------------------------------------------------------
-  // Upgrade definitions. Each has a base cost that scales geometrically.
+  // Number formatting: integers, then K / M / B, then scientific.
+  // ---------------------------------------------------------------------------
+  function formatNum(n) {
+    if (!isFinite(n)) return "∞";
+    n = Math.max(0, n);
+    if (n < 1000) return String(Math.floor(n));
+    if (n < 1e12) {
+      const units = [[1e9, "B"], [1e6, "M"], [1e3, "K"]];
+      for (const [v, s] of units) {
+        if (n >= v) {
+          const x = n / v;
+          const str = x >= 100 ? String(Math.round(x)) : x.toFixed(x >= 10 ? 1 : 2);
+          return str.replace(/\.?0+$/, "") + s;
+        }
+      }
+    }
+    const exp = Math.floor(Math.log10(n));
+    return (n / Math.pow(10, exp)).toFixed(2) + "e" + exp;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Upgrade definitions. Damage upgrades are multiplicative (a few % each) so
+  // they can chase the 10x-per-level HP curve without ever "finishing".
   // ---------------------------------------------------------------------------
   const UPGRADES = [
     {
-      id: "damage",
+      id: "power",
       name: "Ball Power",
-      desc: "+1 damage per bounce.",
-      baseCost: 15,
-      growth: 1.6,
-      apply: (s) => { s.ballDamage += 1; },
+      desc: "+8% ball damage.",
+      baseCost: 12,
+      growth: 1.27,
+      apply: (s) => { s.ballPowerMul *= 1.08; },
     },
     {
       id: "click",
       name: "Sharp Finger",
-      desc: "+1 damage per click.",
-      baseCost: 20,
-      growth: 1.55,
-      apply: (s) => { s.clickDamage += 1; },
+      desc: "+8% click damage.",
+      baseCost: 15,
+      growth: 1.27,
+      apply: (s) => { s.clickPowerMul *= 1.08; },
     },
     {
       id: "speed",
       name: "Momentum",
       desc: "Balls move 8% faster.",
-      baseCost: 30,
-      growth: 1.5,
-      max: 25,
+      baseCost: 40,
+      growth: 1.4,
+      max: 40,
       apply: (s) => { s.speedMul *= 1.08; },
     },
     {
       id: "ball",
       name: "Extra Ball",
-      desc: "Add a level-1 ball.",
-      baseCost: 120,
-      growth: 1.9,
+      desc: "Add a level-1 ball (max 10, then merge).",
+      baseCost: 25,
+      growth: 1.4,
       apply: (s) => { s.ballCounts[1] = (s.ballCounts[1] || 0) + 1; },
     },
     {
       id: "yield",
       name: "Precious Shards",
       desc: "+50% shards per block broken.",
-      baseCost: 80,
-      growth: 1.7,
+      baseCost: 60,
+      growth: 1.5,
       apply: (s) => { s.yieldMul += 0.5; },
     },
   ];
@@ -81,9 +122,9 @@
   // ---------------------------------------------------------------------------
   const DEFAULT_STATE = () => ({
     fragments: 0,
-    board: 1,          // monotonic depth counter (drives difficulty & rewards)
-    ballDamage: 1,     // base damage a level-1 ball deals per bounce
-    clickDamage: 1,
+    metaLevel: 1,        // which universe you are climbing (the true progression)
+    ballPowerMul: 1,     // multiplicative damage a level-1 ball deals per bounce
+    clickPowerMul: 1,    // multiplicative click damage
     speedMul: 1,
     yieldMul: 1,
     ballCounts: { 1: 1 }, // level -> number of balls owned
@@ -100,26 +141,28 @@
   // `parent` (the meta-board it lives inside). `parent.portalIndex` is the block
   // in the parent that we entered through — the one destroyed when we zoom back
   // out. During the "hunt" phase `board` IS the meta-board and `parent` is null;
-  // the grandparent is generated on the fly only if we need to climb again.
+  // the next universe is generated on the spot when the meta-board is finished.
   // ---------------------------------------------------------------------------
   const runtime = {
-    board: null,        // { blocks, portalIndex } — active, full-screen board
-    parent: null,       // { blocks, portalIndex } — the meta-board above, or null
-    phase: "play",      // "play" | "hunt" | "zoomOut" | "zoomIn"
-    anim: null,         // active zoom transition, see startZoom* below
-    huntGrace: 0,       // countdown before balls may enter a block while hunting
+    board: null,        // { blocks, portalIndex, rank } — active, full-screen
+    parent: null,       // { blocks, portalIndex, rank } — the meta-board, or null
+    phase: "play",      // "play" | "hunt" | "zoomOut" | "zoomIn" | "ascend"
+    anim: null,         // active zoom transition
+    interlude: null,    // active "upper universe" screen
+    pending: null,      // board to reveal once the interlude ends
+    huntGrace: 0,       // countdown before balls may dive into a meta block
 
     balls: [],
     particles: [],
     floaters: [],       // floating "+N" / "-N" texts
-    announce: null,     // central banner (e.g. "Board 3")
+    announce: null,     // central banner
 
     cols: 0,
     rows: 0,
     cell: 0,
     marginX: 0,
     marginTop: 0,
-    fragTimestamps: [], // for the "shards/s" readout
+    fragTimestamps: [], // for the per-second readout
   };
 
   // ---------------------------------------------------------------------------
@@ -145,10 +188,10 @@
   // drawn full-screen (the zoom is a camera effect, not a change in grid size).
   // ---------------------------------------------------------------------------
   function layoutGrid() {
-    const target = 56;                       // desired block size in px
+    const target = 72;                       // desired block size in px
     const cols = Math.max(6, Math.floor(W / target));
-    const cell = Math.min(72, Math.floor(W / cols));
-    const rows = Math.max(4, Math.floor((H * 0.55) / cell));
+    const cell = Math.min(96, Math.floor(W / cols));
+    const rows = Math.max(3, Math.floor((H * 0.52) / cell));
 
     // Only rebuild when the COLUMN count changes (width / rotation). Ignoring
     // height changes avoids wiping the board when the mobile URL bar shows/hides.
@@ -178,30 +221,32 @@
     return blockRect(b.r, b.c);
   }
 
-  function makeBlock(r, c) {
-    // Lower rows are a bit tougher, and every depth level adds HP: a gentle but
-    // endless ramp.
-    const maxHp = 2 + Math.floor(r / 2) + Math.floor(Math.random() * 2) + (state.board - 1);
+  // A block on a board of the given rank. HP scales 10x per rank, so a meta
+  // block is ten times tougher than the board one notch below it.
+  function makeBlock(r, c, rank) {
+    const pal = paletteFor(rank);
+    const base = 1 + Math.floor(r / 2) + (Math.random() < 0.5 ? 0 : 1); // ~1..4
+    const maxHp = base * Math.pow(HP_PER_META, rank);
     return {
       r, c,
       hp: maxHp,
       maxHp,
-      color: BLOCK_COLORS[(r + c) % BLOCK_COLORS.length],
+      color: pal[(r + c) % pal.length],
       hit: 0,            // hit-flash timer
       alive: true,
     };
   }
 
-  // A fresh board: a full grid of live blocks.
-  function makeBoard() {
+  // A fresh board of a given rank: a full grid of live blocks.
+  function makeBoard(rank) {
     const blocks = [];
     for (let r = 0; r < runtime.rows; r++) {
-      for (let c = 0; c < runtime.cols; c++) blocks.push(makeBlock(r, c));
+      for (let c = 0; c < runtime.cols; c++) blocks.push(makeBlock(r, c, rank));
     }
-    return { blocks, portalIndex: null };
+    return { blocks, portalIndex: null, rank };
   }
 
-  // Index of a random living block — used to pick where a meta-board is entered.
+  // Index of a random living block — where a meta-board is entered.
   function pickPortal(board) {
     const alive = [];
     board.blocks.forEach((b, i) => { if (b.alive) alive.push(i); });
@@ -212,15 +257,18 @@
     return board.blocks.length > 0 && board.blocks.every((b) => !b.alive);
   }
 
-  // (Re)create the starting pair of boards: a meta-board we came from and the
-  // fresh board we are clearing inside one of its blocks.
+  // (Re)create the starting pair of boards: the meta-board of the current
+  // universe (rank = metaLevel) and the fresh sub-board we clear inside one of
+  // its blocks (rank one notch lower).
   function ensureBoards(force) {
     if (!force && runtime.board) return;
-    runtime.parent = makeBoard();
+    runtime.parent = makeBoard(state.metaLevel);
     runtime.parent.portalIndex = pickPortal(runtime.parent);
-    runtime.board = makeBoard();
+    runtime.board = makeBoard(state.metaLevel - 1);
     runtime.phase = "play";
     runtime.anim = null;
+    runtime.interlude = null;
+    runtime.pending = null;
     runtime.huntGrace = 0;
     placeBalls(W / 2, H * 0.7, Math.min(W, H) * 0.3);
   }
@@ -233,8 +281,8 @@
   }
 
   function ballDamageOf(ball) {
-    // A level-L ball hits for L times the base ball damage.
-    return state.ballDamage * ball.level;
+    // A level-L ball hits for L times the (multiplicative) base ball damage.
+    return state.ballPowerMul * ball.level;
   }
 
   function makeBall(level) {
@@ -293,6 +341,7 @@
     syncBalls();
     save();
     renderBallBar();
+    renderShop();   // buying level-1 balls may have unlocked again
     updateHud();
   }
 
@@ -301,7 +350,7 @@
   // ---------------------------------------------------------------------------
   function breakBlock(block) {
     block.alive = false;
-    const reward = Math.round(block.maxHp * 2 * state.yieldMul);
+    const reward = block.maxHp * 2 * state.yieldMul;
     state.fragments += reward;
     runtime.fragTimestamps.push(performance.now());
 
@@ -310,7 +359,7 @@
     runtime.floaters.push({
       x: rect.x + rect.w / 2,
       y: rect.y + rect.h / 2,
-      text: "+" + reward,
+      text: "+" + formatNum(reward),
       life: 1,
       color: "#ffcf6b",
       size: 16,
@@ -323,11 +372,10 @@
     block.hp -= dmg;
     block.hit = 1;
     spawnParticles(cx, cy, block.color, 4);
-    // Show the damage dealt on every hit.
     runtime.floaters.push({
       x: cx,
       y: cy - 6,
-      text: "-" + dmg,
+      text: "-" + formatNum(dmg),
       life: 0.7,
       color: "#ffffff",
       size: 13,
@@ -336,35 +384,23 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Zoom transitions — the heart of the infinite mechanic.
-  //
-  // Zoom OUT: the finished board shrinks into one block of its parent meta-board
-  // while the camera pulls back to reveal the whole meta-board. Called both when
-  // a normal board is cleared and when a whole meta-board is finished (in which
-  // case the grandparent is generated on the spot).
-  //
-  // Zoom IN: the camera dives into a chosen block of the current meta-board and a
-  // fresh board grows out of it to fill the screen.
+  // Zoom transitions & universe ascension — the heart of the infinite mechanic.
   // ---------------------------------------------------------------------------
+
+  // Sub-board cleared -> fall back out into the meta-board it lived in.
   function startZoomOut() {
-    let meta, cellIndex;
-    if (runtime.parent) {
-      // Normal case: fall back into the block we entered from.
-      meta = runtime.parent;
-      cellIndex = runtime.parent.portalIndex;
-    } else {
-      // The whole meta-board is done — climb one level into a brand-new
-      // grandparent board. We never keep the grandparent around until now.
-      meta = makeBoard();
-      cellIndex = pickPortal(meta);
-    }
-    runtime.anim = { kind: "out", t: 0, meta, child: runtime.board, cellIndex };
+    const meta = runtime.parent;                 // always set while playing a sub
+    runtime.anim = { kind: "out", t: 0, meta, child: runtime.board, cellIndex: meta.portalIndex };
     runtime.phase = "zoomOut";
   }
 
   function completeZoomOut() {
-    const { meta, cellIndex } = runtime.anim;
-    meta.blocks[cellIndex].alive = false; // the block we just cleared, destroyed
+    const { meta, child, cellIndex } = runtime.anim;
+    meta.blocks[cellIndex].alive = false;        // the block we just cleared
+
+    // A modest completion bonus on top of the shards from each block.
+    const bonus = Math.round(6 * Math.pow(HP_PER_META, child.rank) * state.yieldMul);
+    state.fragments += bonus;
 
     runtime.board = meta;
     runtime.parent = null;
@@ -372,33 +408,57 @@
     runtime.phase = "hunt";
     runtime.huntGrace = HUNT_GRACE;
 
-    // Reward for clearing a board and advance the endless difficulty ramp.
-    state.board += 1;
-    const bonus = Math.round(20 * state.board * state.yieldMul);
-    state.fragments += bonus;
-    runtime.announce = { text: "Board " + state.board, sub: "+" + bonus + " shards", life: 1.6 };
-
-    // Balls pour out of the block that was just destroyed.
     const rc = cellRectOf(meta, cellIndex);
     placeBalls(rc.x + rc.w / 2, rc.y + rc.h / 2, Math.max(rc.w, rc.h));
-
     save();
     updateHud();
   }
 
+  // Dive into one block of the meta-board -> a fresh sub-board grows inside it.
   function startZoomIn(index) {
-    runtime.anim = { kind: "in", t: 0, meta: runtime.board, child: makeBoard(), cellIndex: index };
+    const child = makeBoard(runtime.board.rank - 1);
+    runtime.anim = { kind: "in", t: 0, meta: runtime.board, child, cellIndex: index };
     runtime.phase = "zoomIn";
   }
 
   function completeZoomIn() {
     const { meta, child, cellIndex } = runtime.anim;
     runtime.parent = meta;
-    runtime.parent.portalIndex = cellIndex; // destroyed when we climb back out
+    runtime.parent.portalIndex = cellIndex;      // destroyed when we climb back out
     runtime.board = child;
     runtime.anim = null;
     runtime.phase = "play";
     placeBalls(W / 2, H * 0.5, Math.min(W, H) * 0.3);
+  }
+
+  // The whole meta-board is finished -> ascend to the next, tougher universe.
+  function startAscension() {
+    const bonus = Math.round(40 * Math.pow(HP_PER_META, state.metaLevel) * state.yieldMul);
+    state.fragments += bonus;
+    state.metaLevel += 1;
+
+    const meta = makeBoard(state.metaLevel);      // the new, 10x-tougher universe
+    const portal = pickPortal(meta);
+    meta.blocks[portal].alive = false;            // the universe we just finished
+    runtime.pending = { meta, portal };
+
+    runtime.interlude = { life: ASCEND_DUR, total: ASCEND_DUR, level: state.metaLevel };
+    runtime.phase = "ascend";
+    save();
+    updateHud();
+  }
+
+  function completeAscension() {
+    const { meta, portal } = runtime.pending;
+    runtime.board = meta;
+    runtime.parent = null;
+    runtime.pending = null;
+    runtime.interlude = null;
+    runtime.phase = "hunt";
+    runtime.huntGrace = HUNT_GRACE;
+
+    const rc = cellRectOf(meta, portal);
+    placeBalls(rc.x + rc.w / 2, rc.y + rc.h / 2, Math.max(rc.w, rc.h));
   }
 
   // ---------------------------------------------------------------------------
@@ -421,11 +481,14 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Physics: circle vs axis-aligned block, resolved per axis.
+  // Physics: circle vs axis-aligned block, resolved per axis. Reflects the ball;
+  // when `doDamage` is set it also chips the block. Returns the block index it
+  // touched (or -1) so the hunt phase can decide to dive in.
   // ---------------------------------------------------------------------------
-  function collideBallBlocks(ball) {
+  function ballHitsBlock(ball, doDamage) {
     const blocks = runtime.board.blocks;
-    for (const block of blocks) {
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
       if (!block.alive) continue;
       const rect = blockRect(block.r, block.c);
       const nearestX = clamp(ball.x, rect.x, rect.x + rect.w);
@@ -433,7 +496,6 @@
       const dx = ball.x - nearestX;
       const dy = ball.y - nearestY;
       if (dx * dx + dy * dy <= ball.r * ball.r) {
-        // Reflect off the shallower penetration axis.
         const overlapX = ball.r - Math.abs(dx);
         const overlapY = ball.r - Math.abs(dy);
         if (overlapX < overlapY) {
@@ -443,24 +505,9 @@
           ball.vy = -ball.vy;
           ball.y += ball.vy > 0 ? overlapY : -overlapY;
         }
-        damageBlock(block, ballDamageOf(ball), nearestX, nearestY);
-        return; // one block per step keeps it stable
+        if (doDamage) damageBlock(block, ballDamageOf(ball), nearestX, nearestY);
+        return i;
       }
-    }
-  }
-
-  // Index of the first living block the circle overlaps, or -1. Used while
-  // hunting: the block a ball touches is the one we zoom into.
-  function blockUnderCircle(board, x, y, r) {
-    for (let i = 0; i < board.blocks.length; i++) {
-      const block = board.blocks[i];
-      if (!block.alive) continue;
-      const rect = blockRect(block.r, block.c);
-      const nearestX = clamp(x, rect.x, rect.x + rect.w);
-      const nearestY = clamp(y, rect.y, rect.y + rect.h);
-      const dx = x - nearestX;
-      const dy = y - nearestY;
-      if (dx * dx + dy * dy <= r * r) return i;
     }
     return -1;
   }
@@ -469,6 +516,8 @@
   // Update loop
   // ---------------------------------------------------------------------------
   function update(dt) {
+    if (runtime.phase === "ascend") { updateAscension(dt); return; }
+
     if (runtime.phase === "play") updatePlay(dt);
     else if (runtime.phase === "hunt") updateHunt(dt);
     else updateZoom(dt); // zoomOut / zoomIn
@@ -476,7 +525,6 @@
     updateEffects(dt);
   }
 
-  // Bounce the balls off the four walls (shared by play and hunt).
   function moveBallsInWalls(dt) {
     const speed = state.speedMul;
     for (const ball of runtime.balls) {
@@ -489,30 +537,31 @@
     }
   }
 
-  // Clearing the current board: balls chip blocks; an empty board zooms out.
+  // Clearing the current sub-board: balls chip blocks; an empty board zooms out.
   function updatePlay(dt) {
     moveBallsInWalls(dt);
-    for (const ball of runtime.balls) collideBallBlocks(ball);
+    for (const ball of runtime.balls) ballHitsBlock(ball, true);
     if (boardCleared(runtime.board)) startZoomOut();
   }
 
-  // Meta-board is on screen: balls drift until one touches a block, then dive in.
+  // Meta-board is on screen: balls bounce off its blocks so it feels alive, and
+  // after a grace period the next block a ball touches is the one we dive into.
+  // (The blocks are not chipped here — you enter them, you don't grind them.)
   function updateHunt(dt) {
-    // If every block of the meta-board has been cleared, climb another level.
-    if (boardCleared(runtime.board)) { startZoomOut(); return; }
+    if (boardCleared(runtime.board)) { startAscension(); return; }
 
     moveBallsInWalls(dt);
 
-    runtime.huntGrace -= dt;
-    if (runtime.huntGrace > 0) return;
-
+    let dive = -1;
+    const canDive = runtime.huntGrace <= 0;
     for (const ball of runtime.balls) {
-      const idx = blockUnderCircle(runtime.board, ball.x, ball.y, ball.r);
-      if (idx >= 0) { startZoomIn(idx); break; }
+      const hit = ballHitsBlock(ball, false);
+      if (canDive && hit >= 0 && dive < 0) dive = hit;
     }
+    runtime.huntGrace -= dt;
+    if (dive >= 0) startZoomIn(dive);
   }
 
-  // Advance a zoom transition and hand off when it finishes.
   function updateZoom(dt) {
     const a = runtime.anim;
     a.t += dt / ZOOM_DUR;
@@ -522,7 +571,12 @@
     }
   }
 
-  // Timers that tick regardless of phase: hit-flash, banner, particles, floaters.
+  function updateAscension(dt) {
+    const it = runtime.interlude;
+    it.life -= dt;
+    if (it.life <= 0) completeAscension();
+  }
+
   function updateEffects(dt) {
     for (const block of runtime.board.blocks) {
       if (block.hit > 0) block.hit = Math.max(0, block.hit - dt * 6);
@@ -550,7 +604,6 @@
       if (f.life <= 0) runtime.floaters.splice(i, 1);
     }
 
-    // Prune the shards-per-second window to the last second.
     const cutoff = performance.now() - 1000;
     while (runtime.fragTimestamps.length && runtime.fragTimestamps[0] < cutoff) {
       runtime.fragTimestamps.shift();
@@ -573,6 +626,8 @@
   function render() {
     ctx.clearRect(0, 0, W, H);
 
+    if (runtime.phase === "ascend") { drawInterlude(runtime.interlude); return; }
+
     if (runtime.phase === "play" || runtime.phase === "hunt") {
       const hint = runtime.phase === "hunt";
       drawBoard(runtime.board, FULL_RECT(), 1, true, hint);
@@ -586,11 +641,9 @@
       const zoomed = cellFillRect(cell);
 
       if (a.kind === "out") {
-        // Meta-board pulls back from the cell to full; child shrinks into it.
         drawBoard(a.meta, lerpRect(zoomed, full, e), clamp01(e * 1.6), false, true);
         drawBoard(a.child, lerpRect(full, cell, e), clamp01((1 - e) * 1.6), true, false);
       } else {
-        // Camera dives into the cell; child grows out of it to fill the screen.
         drawBoard(a.meta, lerpRect(full, zoomed, e), clamp01((1 - e) * 1.6), true, false);
         drawBoard(a.child, lerpRect(cell, full, e), clamp01(e * 1.6), false, false);
       }
@@ -599,8 +652,7 @@
     drawAnnounce();
   }
 
-  // Draw a whole board mapped into `dest`, at overall opacity `alpha`. Optionally
-  // draws the balls riding this layer, and a portal-hint pulse on live blocks.
+  // Draw a whole board mapped into `dest`, at overall opacity `alpha`.
   function drawBoard(board, dest, alpha, withBalls, portalHint) {
     ctx.save();
     ctx.beginPath();
@@ -664,10 +716,10 @@
         ctx.save();
         ctx.globalAlpha = baseAlpha * 0.9;
         ctx.fillStyle = "#0d1117";
-        ctx.font = `800 ${Math.round(rect.h * 0.42)}px Inter, system-ui, sans-serif`;
+        ctx.font = `800 ${Math.round(rect.h * 0.32)}px Inter, system-ui, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(String(block.hp), rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
+        ctx.fillText(formatNum(block.hp), rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
         ctx.restore();
       }
     }
@@ -744,6 +796,75 @@
     ctx.globalAlpha = 1;
   }
 
+  // The "accessing upper universe level N..." interlude between universes.
+  function drawInterlude(it) {
+    const now = performance.now() / 1000;
+    const p = clamp01(1 - it.life / it.total);
+    let a = 1;
+    if (it.life > it.total - 0.4) a = (it.total - it.life) / 0.4; // fade in
+    else if (it.life < 0.4) a = it.life / 0.4;                    // fade out
+    a = clamp01(a);
+
+    const cx = W / 2, cy = H * 0.42;
+    const R = Math.min(W, H);
+
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = "#05070c";
+    ctx.fillRect(0, 0, W, H);
+
+    // Expanding rings.
+    for (let k = 0; k < 3; k++) {
+      const rp = (now * 0.5 + k / 3) % 1;
+      ctx.globalAlpha = a * (1 - rp) * 0.5;
+      ctx.strokeStyle = "#8a7dff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rp * R * 0.42, 0, TAU);
+      ctx.stroke();
+    }
+
+    // Pulsing core.
+    const pr = R * 0.05 * (1 + 0.18 * Math.sin(now * 4));
+    const orb = ctx.createRadialGradient(cx, cy, 0, cx, cy, pr * 2.4);
+    orb.addColorStop(0, "#ffffff");
+    orb.addColorStop(0.5, "#8a7dff");
+    orb.addColorStop(1, "rgba(138,125,255,0)");
+    ctx.globalAlpha = a;
+    ctx.fillStyle = orb;
+    ctx.beginPath();
+    ctx.arc(cx, cy, pr * 2.4, 0, TAU);
+    ctx.fill();
+
+    // Text.
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.globalAlpha = a * 0.85;
+    ctx.fillStyle = "#8b98a5";
+    ctx.font = "700 14px Inter, system-ui, sans-serif";
+    ctx.fillText("ACCESSING UPPER UNIVERSE", cx, cy + R * 0.2);
+
+    const dots = ".".repeat(1 + Math.floor((now * 2) % 3));
+    ctx.globalAlpha = a;
+    ctx.fillStyle = "#56d3c9";
+    ctx.font = "800 30px Inter, system-ui, sans-serif";
+    ctx.fillText("LEVEL " + it.level + " " + dots, cx, cy + R * 0.2 + 34);
+
+    // Progress bar.
+    const bw = Math.min(W * 0.5, 320), bh = 6;
+    const bx = cx - bw / 2, by = cy + R * 0.2 + 64;
+    ctx.globalAlpha = a * 0.3;
+    ctx.fillStyle = "#223041";
+    roundRect(bx, by, bw, bh, 3);
+    ctx.fill();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = "#56d3c9";
+    roundRect(bx, by, bw * p, bh, 3);
+    ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
   // ---------------------------------------------------------------------------
   // Canvas & math helpers
   // ---------------------------------------------------------------------------
@@ -781,7 +902,7 @@
 
   // ---------------------------------------------------------------------------
   // Input: click / tap
-  //   - while clearing a board, a click chips the block under the pointer;
+  //   - while clearing a sub-board, a click chips the block under the pointer;
   //   - while hunting the meta-board, a click dives into the block you pick.
   // ---------------------------------------------------------------------------
   function onPointer(clientX, clientY) {
@@ -795,7 +916,7 @@
       if (!block.alive) continue;
       const b = blockRect(block.r, block.c);
       if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
-        if (runtime.phase === "play") damageBlock(block, state.clickDamage, x, y);
+        if (runtime.phase === "play") damageBlock(block, state.clickPowerMul, x, y);
         else startZoomIn(i);
         hideHint();
         return;
@@ -817,12 +938,19 @@
   // ---------------------------------------------------------------------------
   // Shop / upgrades UI
   // ---------------------------------------------------------------------------
+  function ballCount1() { return state.ballCounts[1] || 0; }
+
   function costOf(u) {
-    return Math.round(u.baseCost * Math.pow(u.growth, state.levels[u.id]));
+    // Extra Ball is priced by how many level-1 balls you already hold, so the
+    // cost resets after you merge — keeping the buy-ten-then-merge loop cheap.
+    const exponent = u.id === "ball" ? ballCount1() : state.levels[u.id];
+    return Math.round(u.baseCost * Math.pow(u.growth, exponent));
   }
 
   function isMaxed(u) {
-    return u.max != null && state.levels[u.id] >= u.max;
+    if (u.max != null && state.levels[u.id] >= u.max) return true;
+    if (u.id === "ball" && ballCount1() >= LEVEL1_CAP) return true; // must merge
+    return false;
   }
 
   function buy(u) {
@@ -841,12 +969,17 @@
 
   const shopEl = document.getElementById("upgrades");
 
+  function costLabel(u) {
+    if (u.id === "ball" && ballCount1() >= LEVEL1_CAP) return "Max 10 — merge them";
+    if (u.max != null && state.levels[u.id] >= u.max) return "Maxed out";
+    return formatNum(costOf(u));
+  }
+
   function renderShop() {
     shopEl.innerHTML = "";
     for (const u of UPGRADES) {
       const maxed = isMaxed(u);
-      const cost = costOf(u);
-      const affordable = !maxed && state.fragments >= cost;
+      const affordable = !maxed && state.fragments >= costOf(u);
 
       const btn = document.createElement("button");
       btn.className = "upgrade" + (affordable ? " affordable" : "");
@@ -857,7 +990,7 @@
           <span class="u-level">Lv. ${state.levels[u.id]}${u.max ? " / " + u.max : ""}</span>
         </div>
         <div class="u-desc">${u.desc}</div>
-        <div class="u-cost">${maxed ? "Maxed out" : cost.toLocaleString("en-US")}</div>
+        <div class="u-cost">${costLabel(u)}</div>
       `;
       btn.addEventListener("click", () => buy(u));
       shopEl.appendChild(btn);
@@ -879,9 +1012,8 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Ball banner: a strip of per-level ball counts + merge buttons.
-  // Only level-1 balls can be bought (Extra Ball); higher levels come from
-  // merging ten of the level below into one.
+  // Ball banner: a strip of per-level ball counts + merge buttons. Only level-1
+  // balls can be bought (capped at 10); higher levels come from merging.
   // ---------------------------------------------------------------------------
   const ballbarEl = document.getElementById("ballbar");
 
@@ -923,8 +1055,8 @@
   const boardEl = document.getElementById("board");
 
   function updateHud() {
-    fragEl.textContent = Math.floor(state.fragments).toLocaleString("en-US");
-    if (boardEl) boardEl.textContent = state.board;
+    fragEl.textContent = formatNum(state.fragments);
+    if (boardEl) boardEl.textContent = state.metaLevel;
     refreshShopAffordability();
   }
 
@@ -934,7 +1066,7 @@
     brandEl.style.cursor = "pointer";
     brandEl.title = "Debug: double your shards";
     brandEl.addEventListener("click", () => {
-      state.fragments = Math.max(1, Math.floor(state.fragments)) * 2;
+      state.fragments = Math.max(1, state.fragments) * 2;
       save();
       updateHud();
     });
@@ -947,9 +1079,9 @@
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify({
         fragments: state.fragments,
-        board: state.board,
-        ballDamage: state.ballDamage,
-        clickDamage: state.clickDamage,
+        metaLevel: state.metaLevel,
+        ballPowerMul: state.ballPowerMul,
+        clickPowerMul: state.clickPowerMul,
         speedMul: state.speedMul,
         yieldMul: state.yieldMul,
         ballCounts: state.ballCounts,
@@ -965,9 +1097,9 @@
       const data = JSON.parse(raw);
       Object.assign(state, {
         fragments: data.fragments ?? 0,
-        board: data.board ?? 1,
-        ballDamage: data.ballDamage ?? 1,
-        clickDamage: data.clickDamage ?? 1,
+        metaLevel: data.metaLevel ?? 1,
+        ballPowerMul: data.ballPowerMul ?? 1,
+        clickPowerMul: data.clickPowerMul ?? 1,
         speedMul: data.speedMul ?? 1,
         yieldMul: data.yieldMul ?? 1,
       });
@@ -979,8 +1111,7 @@
     } catch (_) { /* corrupt save — start fresh */ }
   }
 
-  // Full reset: wipe the save AND every scrap of live state (shards, board,
-  // upgrades, balls, and the boards themselves), then rebuild from scratch.
+  // Full reset: wipe the save AND every scrap of live state, then rebuild.
   function resetGame() {
     try { localStorage.removeItem(SAVE_KEY); } catch (_) {}
 
@@ -994,11 +1125,13 @@
     runtime.parent = null;
     runtime.board = null;
     runtime.anim = null;
+    runtime.interlude = null;
+    runtime.pending = null;
     runtime.phase = "play";
     runtime.huntGrace = 0;
 
-    syncBalls();          // rebuild the single starting level-1 ball
-    ensureBoards(true);   // fresh boards + placed balls
+    syncBalls();
+    ensureBoards(true);
     renderShop();
     renderBallBar();
     updateHud();
@@ -1010,7 +1143,6 @@
     resetGame();
   });
 
-  // Autosave periodically.
   setInterval(save, 5000);
   window.addEventListener("beforeunload", save);
 
@@ -1028,7 +1160,6 @@
     update(dt);
     render();
 
-    // The "shards/s" readout updates a few times a second.
     hudTimer += dt;
     if (hudTimer > 0.25) {
       hudTimer = 0;
@@ -1049,8 +1180,6 @@
     renderBallBar();
     updateHud();
     window.addEventListener("resize", resize);
-    // Re-measure whenever the canvas box changes (mobile URL bar, rotation,
-    // layout settling once the shop is in place) — keeps the balls perfectly round.
     if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
     requestAnimationFrame((t) => { last = t; frame(t); });
   }
