@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,28 +16,30 @@
       <div class="stats">
         <div class="stat">
           <span class="stat-value" id="board">1</span>
-          <span class="stat-label">Tableau</span>
+          <span class="stat-label">Board</span>
         </div>
         <div class="stat">
           <span class="stat-value" id="fragments">0</span>
-          <span class="stat-label">Fragments</span>
+          <span class="stat-label">Shards</span>
         </div>
         <div class="stat">
           <span class="stat-value" id="fps">0</span>
-          <span class="stat-label">Éclats / s</span>
+          <span class="stat-label">Shards / s</span>
         </div>
       </div>
     </header>
 
     <main id="stage">
       <canvas id="game"></canvas>
-      <div id="hint">Clique sur les blocs pour les fissurer — ou laisse la balle faire le travail.</div>
+      <div id="hint">Click the blocks to crack them — or let the balls do the work.</div>
     </main>
 
     <aside id="shop">
-      <h2>Améliorations</h2>
+      <h2>Balls</h2>
+      <div id="ballbar"></div>
+      <h2>Upgrades</h2>
       <div id="upgrades"></div>
-      <button id="reset" title="Efface toute progression">Réinitialiser</button>
+      <button id="reset" title="Wipes all progress">Reset</button>
     </aside>
   </div>
 

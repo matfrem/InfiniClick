@@ -120,13 +120,51 @@ html, body {
   overflow: hidden;
 }
 #shop h2 {
-  margin: 0 0 14px;
+  margin: 0 0 12px;
   font-size: 15px;
   text-transform: uppercase;
   letter-spacing: 1.5px;
   color: var(--muted);
 }
+#shop h2:not(:first-child) { margin-top: 16px; }
 #upgrades { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+
+/* Ball bar: per-level counts + merge buttons */
+#ballbar { display: flex; flex-direction: column; gap: 8px; }
+.ballchip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 13px;
+}
+.ballchip .dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+  flex: none;
+}
+.ballchip .lv { font-weight: 700; }
+.ballchip .ct { color: var(--muted); font-variant-numeric: tabular-nums; }
+.ballchip .merge {
+  margin-left: auto;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--bg);
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.08s ease;
+}
+.ballchip .merge:hover { filter: brightness(1.1); }
+.ballchip .merge:active { transform: translateY(1px); }
 
 .upgrade {
   text-align: left;
@@ -180,7 +218,7 @@ html, body {
   #shop { max-height: 40vh; }
 }
 
-/* Trois stats + le titre : resserrer sur les petits écrans. */
+/* Three stats + the title: tighten up on small screens. */
 @media (max-width: 520px) {
   #topbar { padding: 12px 14px; }
   .brand h1 { font-size: 18px; }

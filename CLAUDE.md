@@ -1,77 +1,86 @@
 # InfiniClick
 
-Un **clicker infini** en HTML5 Canvas, inspiré de *ZenShards*. Une balle rebondit
-sur une grille de blocs destructibles ; chaque impact fissure un bloc, chaque bloc
-brisé libère des **fragments** que l'on dépense en améliorations. La grille se
-régénère sans fin — la boucle de jeu ne s'arrête jamais, elle ne fait que grandir.
+An **infinite clicker** built on the HTML5 Canvas, inspired by *ZenShards*. A ball
+bounces around a grid of destructible blocks; every impact cracks a block, and
+every broken block releases **shards** you spend on upgrades. The grid regenerates
+endlessly — the game loop never stops, it only grows.
 
-## Boucle de jeu
+## Game loop
 
-1. Une ou plusieurs balles rebondissent sur les murs et les blocs.
-2. Chaque rebond (ou chaque clic) retire des points de vie à un bloc ; les dégâts
-   et les PV restants s'affichent sur le bloc.
-3. Un bloc à 0 PV se brise et verse des fragments.
-4. Quand **tout le tableau** est nettoyé, un nouveau tableau (plus coriace) est
-   généré et un bonus de fragments est versé.
-5. Les fragments achètent des améliorations qui accélèrent la récolte.
-6. Retour à l'étape 1, indéfiniment.
+1. One or more balls bounce off the walls and the blocks.
+2. Each bounce (or each click) removes hit points from a block; the damage dealt
+   and the remaining HP are shown on the block.
+3. A block at 0 HP shatters and pours out shards.
+4. When the **whole board** is cleared, a new (tougher) board is generated and a
+   shard bonus is awarded.
+5. Shards buy upgrades that speed up the harvest.
+6. Back to step 1, forever.
 
-## Lancer le jeu
+## Balls & levels
 
-Aucune dépendance, aucune étape de build. Ouvre simplement `index.html` dans un
-navigateur. Pour un serveur local :
+Balls come in **levels**. A level-N ball deals N times the base damage. Buying the
+*Extra Ball* upgrade always adds a **level-1** ball — the only ones you can buy.
+Collect ten balls of the same level and **merge** them (button in the ball bar
+above the shop) into a single ball of the next level, ZenShards-style. Higher-level
+balls are bigger, brighter, and stamped with their level.
+
+## Running the game
+
+No dependencies, no build step. Just open `index.html` in a browser. For a local
+server:
 
 ```bash
 python3 -m http.server 8000
-# puis http://localhost:8000
+# then http://localhost:8000
 ```
 
-## Structure du projet
+## Project layout
 
-| Fichier      | Rôle                                                              |
-|--------------|------------------------------------------------------------------|
-| `index.html` | Structure de la page : barre de stats, canvas, boutique.         |
-| `style.css`  | Thème sombre « zen », mise en page et style de la boutique.      |
-| `game.js`    | Toute la logique : physique, rendu, économie, améliorations, sauvegarde. |
-| `CLAUDE.md`  | Ce document.                                                      |
+| File         | Role                                                              |
+|--------------|-------------------------------------------------------------------|
+| `index.html` | Page structure: stat bar, canvas, shop.                           |
+| `style.css`  | Dark "zen" theme, layout and shop styling.                        |
+| `game.js`    | All the logic: physics, rendering, economy, upgrades, saving.     |
+| `CLAUDE.md`  | This document.                                                    |
 
-## Architecture de `game.js`
+## Architecture of `game.js`
 
-Le code est encapsulé dans une IIFE (aucune variable globale) et organisé en sections :
+The code lives inside an IIFE (no global variables) and is split into sections:
 
-- **`state`** — progression persistée (fragments, tableau courant, niveaux d'améliorations, multiplicateurs).
-- **`runtime`** — données éphémères non sauvegardées (balles, blocs, particules, textes flottants, bannière).
-- **Grille** (`layoutGrid`, `buildBlocks`, `makeBlock`, `blockRect`) — dispose les blocs et calcule leur géométrie de façon responsive.
-- **Physique** (`collideBallBlocks`) — collision cercle/rectangle résolue par axe de moindre pénétration.
-- **Économie** (`breakBlock`, `damageBlock`, `nextBoard`) — dégâts, récompenses en fragments, passage au tableau suivant, effets visuels.
-- **Boutique** (`UPGRADES`, `costOf`, `buy`, `renderShop`) — améliorations à coût géométrique.
-- **Rendu** (`render`) — dessine blocs, fissures, particules, balles et textes flottants.
-- **Persistance** (`save`, `load`) — sauvegarde automatique dans `localStorage` (clé `infiniclick.save.v1`).
-- **Boucle** (`frame`) — `requestAnimationFrame` avec `dt` borné pour rester stable après un changement d'onglet.
+- **`state`** — persisted progress (shards, current board, ball counts per level, upgrade levels, multipliers).
+- **`runtime`** — ephemeral, unsaved data (balls, blocks, particles, floating texts, banner).
+- **Grid** (`layoutGrid`, `buildBlocks`, `makeBlock`, `blockRect`) — lays out the blocks and computes their geometry responsively.
+- **Balls** (`makeBall`, `syncBalls`, `mergeBalls`, `ballDamageOf`) — levelled balls and merging.
+- **Physics** (`collideBallBlocks`) — circle/rectangle collision resolved on the axis of least penetration.
+- **Economy** (`breakBlock`, `damageBlock`, `nextBoard`) — damage, shard rewards, advancing to the next board, visual effects.
+- **Shop** (`UPGRADES`, `costOf`, `buy`, `renderShop`, `renderBallBar`) — geometric-cost upgrades and the ball bar.
+- **Rendering** (`render`) — draws blocks, cracks, particles, balls and floating texts.
+- **Persistence** (`save`, `load`) — auto-saves to `localStorage` (key `infiniclick.save.v1`).
+- **Loop** (`frame`) — `requestAnimationFrame` with a clamped `dt` to stay stable after a tab switch.
 
-## Améliorations
+## Upgrades
 
-| Amélioration            | Effet                                           |
-|-------------------------|-------------------------------------------------|
-| Puissance de la balle   | +1 dégât par rebond.                             |
-| Doigt tranchant         | +1 dégât par clic.                               |
-| Élan                    | +8 % de vitesse des balles (plafonné).           |
-| Balle supplémentaire    | Ajoute une balle (plafonné).                     |
-| Éclats précieux         | +50 % de fragments par bloc brisé.               |
+| Upgrade          | Effect                                    |
+|------------------|-------------------------------------------|
+| Ball Power       | +1 damage per bounce.                     |
+| Sharp Finger     | +1 damage per click.                      |
+| Momentum         | +8% ball speed (capped).                  |
+| Extra Ball       | Adds a level-1 ball.                       |
+| Precious Shards  | +50% shards per block broken.             |
 
-Chaque achat augmente le coût de l'amélioration selon un facteur `growth`, ce qui
-maintient une progression exponentielle typique des clickers.
+Each purchase raises the upgrade's cost by a `growth` factor, keeping the
+exponential progression typical of clickers.
 
-## Personnalisation rapide
+## Quick customization
 
-- **Palette / thème** : variables CSS dans `:root` de `style.css`.
-- **Couleurs des blocs** : `BLOCK_COLORS` dans `game.js`.
-- **Équilibrage** : `baseCost` / `growth` des `UPGRADES`, PV des blocs dans `makeBlock`,
-  récompense dans `breakBlock`.
-- **Taille de la grille** : constante `target` dans `layoutGrid`.
+- **Palette / theme**: CSS variables in `:root` of `style.css`.
+- **Block colors**: `BLOCK_COLORS` in `game.js`. **Ball colors**: `BALL_COLORS`.
+- **Balance**: `baseCost` / `growth` of `UPGRADES`, block HP in `makeBlock`,
+  reward in `breakBlock`, ball damage in `ballDamageOf`, merge cost via `MERGE_REQUIRED`.
+- **Grid size**: the `target` constant in `layoutGrid`.
 
 ## Conventions
 
-- JavaScript « vanilla » (ES2020+), sans framework ni outil de build.
-- Un seul fichier de logique ; garder les sections commentées et séparées.
-- Rien ne doit bloquer le thread : tout passe par la boucle `requestAnimationFrame`.
+- Vanilla JavaScript (ES2020+), no framework and no build tool.
+- A single logic file; keep the sections commented and separated.
+- Nothing blocks the thread: everything runs through the `requestAnimationFrame` loop.

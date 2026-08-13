@@ -1,10 +1,11 @@
 /*
  * InfiniClick — a zen infinite clicker inspired by ZenShards.
  *
- * A ball (or several) bounces around a grid of destructible blocks. Every hit
- * chips away at a block's health; breaking one scatters fragments you spend on
- * upgrades. You can also click blocks directly. The grid refills endlessly, so
- * the loop never ends — only grows.
+ * One or more balls bounce around a grid of destructible blocks. Every hit
+ * chips away at a block's health; breaking one scatters shards you spend on
+ * upgrades. Clearing the whole grid generates a tougher board. Balls come in
+ * levels: ten balls of a level can be merged into one stronger ball of the
+ * next level (ZenShards-style). The loop never ends — it only grows.
  */
 (() => {
   "use strict";
@@ -14,7 +15,10 @@
   // ---------------------------------------------------------------------------
   const SAVE_KEY = "infiniclick.save.v1";
   const BLOCK_COLORS = ["#56d3c9", "#8a7dff", "#ffcf6b", "#ff8fab", "#7bd88f"];
+  const BALL_COLORS = ["#56d3c9", "#8a7dff", "#ffcf6b", "#ff8fab", "#7bd88f", "#f5f5f5"];
   const TAU = Math.PI * 2;
+  const MERGE_REQUIRED = 10;   // balls of level N needed to make one level N+1
+  const MAX_BALLS = 60;        // hard cap on simultaneous balls (performance)
 
   // ---------------------------------------------------------------------------
   // Upgrade definitions. Each has a base cost that scales geometrically.
@@ -22,24 +26,24 @@
   const UPGRADES = [
     {
       id: "damage",
-      name: "Puissance de la balle",
-      desc: "Chaque rebond inflige +1 de dégât.",
+      name: "Ball Power",
+      desc: "+1 damage per bounce.",
       baseCost: 15,
       growth: 1.6,
       apply: (s) => { s.ballDamage += 1; },
     },
     {
       id: "click",
-      name: "Doigt tranchant",
-      desc: "Tes clics infligent +1 de dégât.",
+      name: "Sharp Finger",
+      desc: "+1 damage per click.",
       baseCost: 20,
       growth: 1.55,
       apply: (s) => { s.clickDamage += 1; },
     },
     {
       id: "speed",
-      name: "Élan",
-      desc: "Les balles se déplacent 8 % plus vite.",
+      name: "Momentum",
+      desc: "Balls move 8% faster.",
       baseCost: 30,
       growth: 1.5,
       max: 25,
@@ -47,17 +51,16 @@
     },
     {
       id: "ball",
-      name: "Balle supplémentaire",
-      desc: "Ajoute une balle rebondissante.",
+      name: "Extra Ball",
+      desc: "Add a level-1 ball.",
       baseCost: 120,
-      growth: 2.0,
-      max: 12,
-      apply: (s) => { s.wantBalls += 1; },
+      growth: 1.9,
+      apply: (s) => { s.ballCounts[1] = (s.ballCounts[1] || 0) + 1; },
     },
     {
       id: "yield",
-      name: "Éclats précieux",
-      desc: "Chaque bloc brisé rapporte +50 % de fragments.",
+      name: "Precious Shards",
+      desc: "+50% shards per block broken.",
       baseCost: 80,
       growth: 1.7,
       apply: (s) => { s.yieldMul += 0.5; },
@@ -65,16 +68,16 @@
   ];
 
   // ---------------------------------------------------------------------------
-  // Game state
+  // Game state (persisted)
   // ---------------------------------------------------------------------------
   const state = {
     fragments: 0,
-    board: 1,          // tableau courant (progression sans fin)
-    ballDamage: 1,
+    board: 1,          // current board (endless progression)
+    ballDamage: 1,     // base damage a level-1 ball deals per bounce
     clickDamage: 1,
     speedMul: 1,
     yieldMul: 1,
-    wantBalls: 1,
+    ballCounts: { 1: 1 }, // level -> number of balls owned
     levels: {},        // upgradeId -> purchased count
   };
   UPGRADES.forEach((u) => (state.levels[u.id] = 0));
@@ -85,14 +88,14 @@
     blocks: [],
     particles: [],
     floaters: [],     // floating "+N" / "-N" texts
-    announce: null,   // bannière centrale (ex : « Tableau 3 »)
-    boardTimer: 0.6,  // délai avant de générer le tableau suivant
+    announce: null,   // central banner (e.g. "Board 3")
+    boardTimer: 0.6,  // delay before generating the next board
     cols: 0,
     rows: 0,
     cell: 0,
     marginX: 0,
     marginTop: 0,
-    fragTimestamps: [], // for the "éclats/s" readout
+    fragTimestamps: [], // for the "shards/s" readout
   };
 
   // ---------------------------------------------------------------------------
@@ -129,9 +132,9 @@
     const cols = Math.max(6, Math.floor(W / target));
     const cell = Math.min(72, Math.floor(W / cols));
     const rows = Math.max(4, Math.floor((H * 0.55) / cell));
-    // On ne reconstruit que si le nombre de COLONNES change (largeur / rotation).
-    // Ignorer les variations de hauteur évite de réinitialiser le tableau quand
-    // la barre d'URL mobile apparaît/disparaît.
+
+    // Only rebuild when the COLUMN count changes (width / rotation). Ignoring
+    // height changes avoids wiping the board when the mobile URL bar shows/hides.
     const colsChanged = cols !== runtime.cols;
     runtime.cols = cols;
     runtime.rows = rows;
@@ -153,8 +156,8 @@
   }
 
   function makeBlock(r, c) {
-    // Les rangées basses sont un peu plus dures, et chaque tableau ajoute des PV :
-    // progression douce mais sans fin.
+    // Lower rows are a bit tougher, and every board adds HP: a gentle but
+    // endless ramp.
     const maxHp = 2 + Math.floor(r / 2) + Math.floor(Math.random() * 2) + (state.board - 1);
     return {
       r, c,
@@ -167,9 +170,18 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Balls
+  // Balls (levelled: higher level = more damage)
   // ---------------------------------------------------------------------------
-  function makeBall() {
+  function ballRadius(level) {
+    return Math.max(7, runtime.cell * 0.16) * (1 + (level - 1) * 0.12);
+  }
+
+  function ballDamageOf(ball) {
+    // A level-L ball hits for L times the base ball damage. Tunable.
+    return state.ballDamage * ball.level;
+  }
+
+  function makeBall(level) {
     const angle = Math.random() * TAU;
     const base = 190;
     return {
@@ -177,17 +189,51 @@
       y: H * 0.75,
       vx: Math.cos(angle) * base,
       vy: -Math.abs(Math.sin(angle)) * base - 60,
-      r: Math.max(7, runtime.cell * 0.16),
+      r: ballRadius(level),
+      level,
     };
   }
 
+  // Rebuild the live ball list from ballCounts, keeping existing balls in motion
+  // and simply relabelling their levels where possible.
   function syncBalls() {
-    while (runtime.balls.length < state.wantBalls) runtime.balls.push(makeBall());
-    if (runtime.balls.length > state.wantBalls) runtime.balls.length = state.wantBalls;
+    const desired = [];
+    Object.keys(state.ballCounts)
+      .map(Number)
+      .sort((a, b) => b - a) // keep the strongest when capping
+      .forEach((lvl) => {
+        for (let i = 0; i < state.ballCounts[lvl]; i++) desired.push(lvl);
+      });
+    if (desired.length > MAX_BALLS) desired.length = MAX_BALLS;
+    if (desired.length === 0) desired.push(1);
+
+    while (runtime.balls.length < desired.length) runtime.balls.push(makeBall(1));
+    runtime.balls.length = desired.length;
+    for (let i = 0; i < desired.length; i++) {
+      runtime.balls[i].level = desired[i];
+      runtime.balls[i].r = ballRadius(desired[i]);
+    }
+  }
+
+  function totalBalls() {
+    return Object.values(state.ballCounts).reduce((a, b) => a + b, 0);
+  }
+
+  // Merge MERGE_REQUIRED balls of `level` into one ball of `level + 1`.
+  function mergeBalls(level) {
+    const count = state.ballCounts[level] || 0;
+    if (count < MERGE_REQUIRED) return;
+    state.ballCounts[level] = count - MERGE_REQUIRED;
+    if (state.ballCounts[level] === 0) delete state.ballCounts[level];
+    state.ballCounts[level + 1] = (state.ballCounts[level + 1] || 0) + 1;
+    syncBalls();
+    save();
+    renderBallBar();
+    updateHud();
   }
 
   // ---------------------------------------------------------------------------
-  // Fragment economy
+  // Shard economy
   // ---------------------------------------------------------------------------
   function breakBlock(block) {
     block.alive = false;
@@ -213,7 +259,7 @@
     block.hp -= dmg;
     block.hit = 1;
     spawnParticles(cx, cy, block.color, 4);
-    // Affiche les dégâts infligés à chaque coup.
+    // Show the damage dealt on every hit.
     runtime.floaters.push({
       x: cx,
       y: cy - 6,
@@ -225,13 +271,13 @@
     if (block.hp <= 0) breakBlock(block);
   }
 
-  // Tableau entièrement nettoyé -> on en génère un nouveau, un peu plus coriace.
+  // Whole board cleared -> generate a new, slightly tougher one.
   function nextBoard() {
     state.board += 1;
     const bonus = Math.round(20 * state.board * state.yieldMul);
     state.fragments += bonus;
     buildBlocks();
-    runtime.announce = { text: "Tableau " + state.board, sub: "+" + bonus + " fragments", life: 1.8 };
+    runtime.announce = { text: "Board " + state.board, sub: "+" + bonus + " shards", life: 1.8 };
     save();
     updateHud();
   }
@@ -258,7 +304,7 @@
   // ---------------------------------------------------------------------------
   // Physics: circle vs axis-aligned block, resolved per axis.
   // ---------------------------------------------------------------------------
-  function collideBallBlocks(ball, dt) {
+  function collideBallBlocks(ball) {
     for (const block of runtime.blocks) {
       if (!block.alive) continue;
       const rect = blockRect(block.r, block.c);
@@ -277,7 +323,7 @@
           ball.vy = -ball.vy;
           ball.y += ball.vy > 0 ? overlapY : -overlapY;
         }
-        damageBlock(block, state.ballDamage, nearestX, nearestY);
+        damageBlock(block, ballDamageOf(ball), nearestX, nearestY);
         return; // one block per step keeps it stable
       }
     }
@@ -299,15 +345,15 @@
       if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy = Math.abs(ball.vy); }
       if (ball.y + ball.r > H) { ball.y = H - ball.r; ball.vy = -Math.abs(ball.vy); }
 
-      collideBallBlocks(ball, dt);
+      collideBallBlocks(ball);
     }
 
-    // Décroissance du flash d'impact.
+    // Hit-flash decay.
     for (const block of runtime.blocks) {
       if (block.hit > 0) block.hit = Math.max(0, block.hit - dt * 6);
     }
 
-    // Progression par tableaux : tout casser génère le tableau suivant.
+    // Board progression: clearing every block generates the next board.
     if (runtime.blocks.length && runtime.blocks.every((b) => !b.alive)) {
       runtime.boardTimer -= dt;
       if (runtime.boardTimer <= 0) nextBoard();
@@ -315,7 +361,7 @@
       runtime.boardTimer = 0.6;
     }
 
-    // Fondu de la bannière centrale.
+    // Central banner fade.
     if (runtime.announce) {
       runtime.announce.life -= dt;
       if (runtime.announce.life <= 0) runtime.announce = null;
@@ -340,7 +386,7 @@
       if (f.life <= 0) runtime.floaters.splice(i, 1);
     }
 
-    // Prune the fragments-per-second window to the last second.
+    // Prune the shards-per-second window to the last second.
     const cutoff = performance.now() - 1000;
     while (runtime.fragTimestamps.length && runtime.fragTimestamps[0] < cutoff) {
       runtime.fragTimestamps.shift();
@@ -377,7 +423,7 @@
       }
       ctx.restore();
 
-      // Cracks when damaged
+      // Cracks + remaining HP once the block has taken a hit.
       if (hpRatio < 1) {
         ctx.save();
         ctx.globalAlpha = (1 - hpRatio) * 0.5;
@@ -390,7 +436,6 @@
         ctx.stroke();
         ctx.restore();
 
-        // PV restants, affichés dès la première touche.
         ctx.save();
         ctx.globalAlpha = 0.9;
         ctx.fillStyle = "#0d1117";
@@ -412,24 +457,34 @@
     }
     ctx.globalAlpha = 1;
 
-    // Balls
+    // Balls (colour + glow scale with level)
     for (const ball of runtime.balls) {
+      const color = BALL_COLORS[(ball.level - 1) % BALL_COLORS.length];
       const g = ctx.createRadialGradient(
         ball.x - ball.r * 0.3, ball.y - ball.r * 0.3, ball.r * 0.2,
         ball.x, ball.y, ball.r
       );
       g.addColorStop(0, "#ffffff");
-      g.addColorStop(1, "#56d3c9");
+      g.addColorStop(1, color);
       ctx.fillStyle = g;
-      ctx.shadowColor = "rgba(86,211,201,0.7)";
+      ctx.shadowColor = color;
       ctx.shadowBlur = 16;
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, ball.r, 0, TAU);
       ctx.fill();
       ctx.shadowBlur = 0;
+
+      // Level number on balls above level 1.
+      if (ball.level > 1) {
+        ctx.fillStyle = "#0d1117";
+        ctx.font = `800 ${Math.round(ball.r)}px Inter, system-ui, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String(ball.level), ball.x, ball.y + 1);
+      }
     }
 
-    // Floating texts ("+N" fragments, "-N" damage)
+    // Floating texts ("+N" shards, "-N" damage)
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
     for (const f of runtime.floaters) {
@@ -440,7 +495,7 @@
     }
     ctx.globalAlpha = 1;
 
-    // Central banner ("Tableau N")
+    // Central banner ("Board N")
     if (runtime.announce) {
       const a = runtime.announce;
       ctx.save();
@@ -534,6 +589,7 @@
     syncBalls();
     save();
     renderShop();
+    renderBallBar();
     updateHud();
   }
 
@@ -552,10 +608,10 @@
       btn.innerHTML = `
         <div class="u-head">
           <span class="u-name">${u.name}</span>
-          <span class="u-level">Niv. ${state.levels[u.id]}${u.max ? " / " + u.max : ""}</span>
+          <span class="u-level">Lv. ${state.levels[u.id]}${u.max ? " / " + u.max : ""}</span>
         </div>
         <div class="u-desc">${u.desc}</div>
-        <div class="u-cost">${maxed ? "Max atteint" : cost.toLocaleString("fr-FR")}</div>
+        <div class="u-cost">${maxed ? "Maxed out" : cost.toLocaleString("en-US")}</div>
       `;
       btn.addEventListener("click", () => buy(u));
       shopEl.appendChild(btn);
@@ -577,6 +633,41 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Ball bar: per-level ball counts + merge buttons
+  // ---------------------------------------------------------------------------
+  const ballbarEl = document.getElementById("ballbar");
+
+  function renderBallBar() {
+    ballbarEl.innerHTML = "";
+    const levels = Object.keys(state.ballCounts)
+      .map(Number)
+      .filter((l) => state.ballCounts[l] > 0)
+      .sort((a, b) => a - b);
+
+    for (const lvl of levels) {
+      const count = state.ballCounts[lvl];
+      const color = BALL_COLORS[(lvl - 1) % BALL_COLORS.length];
+
+      const chip = document.createElement("div");
+      chip.className = "ballchip";
+      chip.innerHTML = `
+        <span class="dot" style="background:${color}"></span>
+        <span class="lv">Lv ${lvl}</span>
+        <span class="ct">×${count}</span>
+      `;
+
+      if (count >= MERGE_REQUIRED) {
+        const btn = document.createElement("button");
+        btn.className = "merge";
+        btn.textContent = `Merge 10 → Lv ${lvl + 1}`;
+        btn.addEventListener("click", () => mergeBalls(lvl));
+        chip.appendChild(btn);
+      }
+      ballbarEl.appendChild(chip);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // HUD
   // ---------------------------------------------------------------------------
   const fragEl = document.getElementById("fragments");
@@ -584,16 +675,16 @@
   const boardEl = document.getElementById("board");
 
   function updateHud() {
-    fragEl.textContent = Math.floor(state.fragments).toLocaleString("fr-FR");
+    fragEl.textContent = Math.floor(state.fragments).toLocaleString("en-US");
     if (boardEl) boardEl.textContent = state.board;
     refreshShopAffordability();
   }
 
-  // Debug : cliquer le titre du jeu double les fragments.
+  // Debug: clicking the game title doubles your shards.
   const brandEl = document.querySelector(".brand");
   if (brandEl) {
     brandEl.style.cursor = "pointer";
-    brandEl.title = "Debug : doubler les fragments";
+    brandEl.title = "Debug: double your shards";
     brandEl.addEventListener("click", () => {
       state.fragments = Math.max(1, Math.floor(state.fragments)) * 2;
       save();
@@ -604,7 +695,10 @@
   // ---------------------------------------------------------------------------
   // Persistence
   // ---------------------------------------------------------------------------
+  let resetting = false;
+
   function save() {
+    if (resetting) return; // don't resurrect a wiped save on reload
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify({
         fragments: state.fragments,
@@ -613,7 +707,7 @@
         clickDamage: state.clickDamage,
         speedMul: state.speedMul,
         yieldMul: state.yieldMul,
-        wantBalls: state.wantBalls,
+        ballCounts: state.ballCounts,
         levels: state.levels,
       }));
     } catch (_) { /* storage unavailable — play unsaved */ }
@@ -631,14 +725,18 @@
         clickDamage: data.clickDamage ?? 1,
         speedMul: data.speedMul ?? 1,
         yieldMul: data.yieldMul ?? 1,
-        wantBalls: data.wantBalls ?? 1,
       });
+      if (data.ballCounts && Object.keys(data.ballCounts).length) {
+        state.ballCounts = {};
+        for (const k of Object.keys(data.ballCounts)) state.ballCounts[k] = data.ballCounts[k];
+      }
       if (data.levels) Object.assign(state.levels, data.levels);
     } catch (_) { /* corrupt save — start fresh */ }
   }
 
   document.getElementById("reset").addEventListener("click", () => {
-    if (!confirm("Réinitialiser toute la progression ?")) return;
+    if (!confirm("Reset all progress?")) return;
+    resetting = true;                       // block the beforeunload autosave
     try { localStorage.removeItem(SAVE_KEY); } catch (_) {}
     location.reload();
   });
@@ -661,7 +759,7 @@
     update(dt);
     render();
 
-    // The "éclats/s" readout updates a few times a second.
+    // The "shards/s" readout updates a few times a second.
     hudTimer += dt;
     if (hudTimer > 0.25) {
       hudTimer = 0;
@@ -679,10 +777,11 @@
     resize();
     syncBalls();
     renderShop();
+    renderBallBar();
     updateHud();
     window.addEventListener("resize", resize);
-    // Re-mesure dès que la boîte du canvas change (barre du bas mobile, rotation,
-    // réagencement une fois la boutique en place) — garde les balles bien rondes.
+    // Re-measure whenever the canvas box changes (mobile URL bar, rotation,
+    // layout settling once the shop is in place) — keeps the balls perfectly round.
     if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
     requestAnimationFrame((t) => { last = t; frame(t); });
   }
