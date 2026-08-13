@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InfiniClick</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <div class="brand">
+        <span class="brand-mark">◈</span>
+        <h1>InfiniClick</h1>
+      </div>
+      <div class="stats">
+        <div class="stat">
+          <span class="stat-value" id="fragments">0</span>
+          <span class="stat-label">Fragments</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" id="fps">0</span>
+          <span class="stat-label">Éclats / s</span>
+        </div>
+      </div>
+    </header>
+
+    <main id="stage">
+      <canvas id="game"></canvas>
+      <div id="hint">Clique sur les blocs pour les fissurer — ou laisse la balle faire le travail.</div>
+    </main>
+
+    <aside id="shop">
+      <h2>Améliorations</h2>
+      <div id="upgrades"></div>
+      <button id="reset" title="Efface toute progression">Réinitialiser</button>
+    </aside>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
