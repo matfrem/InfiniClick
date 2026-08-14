@@ -65,7 +65,7 @@ charts them live. There is a single growth law, not a special per-universe rule.
 | Early game too slow / grindy              | ↓ `HP_BASE`, ↓ `COST_GROWTH`, ↓ `BALL_BASE_COST`     |
 | Shards pile up too fast / too slow        | `REWARD_RATIO`                                        |
 | Merging feels weak / mandatory-but-dull   | `MERGE_DAMAGE_MULT` (payoff per merge)               |
-| Universes fall too fast (no wall)         | ↑ `COST_GROWTH`, or a bigger grid (`GRID_TARGET`)    |
+| Universes fall too fast (no wall)         | ↑ `COST_GROWTH`, or a bigger grid (`GRID_COLS`/`ROWS`) |
 | Universes are an impossible wall          | ↓ `COST_GROWTH`, ↓ `BALL_COST_GROWTH`                |
 | Ascension feels unrewarding               | ↑ `ASCEND_BONUS_MULT`                                |
 | Numbers explode past readability          | already handled by `formatNum`; tune, don't fear it  |

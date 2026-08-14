@@ -45,11 +45,11 @@
       <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap">
         <div class="ctrl" style="display:flex;flex-direction:column;gap:4px">
           <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Stage width (px)</label>
-          <input id="inW" type="number" step="20" value="840" style="font:inherit;font-size:14px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:120px">
+          <input id="inW" type="number" step="20" value="390" style="font:inherit;font-size:14px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:120px">
         </div>
         <div class="ctrl" style="display:flex;flex-direction:column;gap:4px">
           <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Stage height (px)</label>
-          <input id="inH" type="number" step="20" value="680" style="font:inherit;font-size:14px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:120px">
+          <input id="inH" type="number" step="20" value="620" style="font:inherit;font-size:14px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:120px">
         </div>
         <button id="remeasure" style="font:inherit;font-weight:700;color:var(--bg);background:var(--accent);border:none;border-radius:8px;padding:10px 16px;cursor:pointer">Re-measure</button>
         <span class="sub" style="margin:0">Desktop ≈ 840×680; a portrait phone ≈ 400×620. Enter your stage size and re-measure to model your layout.</span>
@@ -82,20 +82,20 @@
     const speed = C.BALL_SPEED;
 
     // Stage size and the layout derived from it (same maths as game.js ›
-    // layoutGrid). Mutable so the Re-measure button can model any device.
+    // layoutGrid). The block count is FIXED (mobile); only the cell scales.
     let W, H, cols, cell, rows, marginX, marginTop, pad, ballR, NBLOCKS;
     function computeLayout(w, h) {
       W = w; H = h;
-      cols = Math.max(6, Math.floor(W / C.GRID_TARGET));
-      cell = Math.min(96, Math.floor(W / cols));
-      rows = Math.max(3, Math.floor((H * 0.52) / cell));
+      cols = C.GRID_COLS;
+      rows = C.GRID_ROWS;
+      cell = Math.max(24, Math.min(C.CELL_MAX, Math.floor(W / cols), Math.floor((H * 0.5) / rows)));
       marginX = (W - cols * cell) / 2;
-      marginTop = cell * 0.6;
+      marginTop = cell * 0.5;
       pad = cell * 0.08;
       ballR = Math.max(7, cell * 0.16);
       NBLOCKS = cols * rows;
     }
-    computeLayout(840, 680);
+    computeLayout(390, 620);   // a portrait phone — the game's target layout
 
     function blockRect(r, c) {
       return { x: marginX + c * cell + pad, y: marginTop + r * cell + pad, w: cell - pad * 2, h: cell - pad * 2 };
@@ -190,9 +190,10 @@
       resetView();
       document.getElementById("status").textContent = "measuring…";
 
-      const hps1 = measureHitsPerSecond(20, 12);
+      const HPS_RUNS = 15, CLEAR_RUNS = 30;
+      const hps1 = measureHitsPerSecond(20, HPS_RUNS);
       const clear = {};
-      for (let n = 1; n <= 10; n++) clear[n] = measureClearTime(n, 20, 400);
+      for (let n = 1; n <= 10; n++) clear[n] = measureClearTime(n, CLEAR_RUNS, 300);
 
       // Render results table.
       const rowsHtml = ["<tr><th>Balls</th><th style='text-align:right'>Clear time (s)</th><th style='text-align:right'>Hits/s total</th></tr>"];
@@ -201,7 +202,7 @@
       }
       document.getElementById("results").innerHTML = rowsHtml.join("");
       document.getElementById("hps").innerHTML =
-        `One ball lands <b>${hps1.toFixed(2)} hits/s</b> on a full board. Balls do not collide with each other, so N balls land ≈ N× that. Grid: <b>${cols}×${rows} = ${NBLOCKS} blocks</b> at ${W}×${H}.`;
+        `One ball lands <b>${hps1.toFixed(2)} hits/s</b> on a full board. Balls do not collide with each other, so N balls land ≈ N× that. Grid: <b>${cols}×${rows} = ${NBLOCKS} blocks</b> at ${W}×${H}. Each clear time is the mean of <b>${CLEAR_RUNS} runs</b>.`;
       document.getElementById("status").textContent = "done";
 
       // Emit stats.js.

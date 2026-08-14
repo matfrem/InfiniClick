@@ -46,7 +46,22 @@ IC.config = {
   ZOOM_DUR: 0.55,           // seconds a zoom transition lasts
   HUNT_GRACE: 2.5,          // seconds balls roam a meta-board before diving in
   ASCEND_DUR: 5,            // seconds the "upper universe" interlude lasts
-  GRID_TARGET: 72,          // desired block size in px (sets the block count)
+
+  // --- Grid ------------------------------------------------------------------
+  // A FIXED block count (the mobile layout) on every device, so the metrics and
+  // the simulator never depend on screen size. The cell just scales to fit.
+  GRID_COLS: 6,
+  GRID_ROWS: 4,
+  CELL_MAX: 96,             // cap the cell size so a wide desktop stays mobile-ish
+
+  // --- Universe names (the fractal scale, smallest first) --------------------
+  // You start inside a quark and zoom outward. Beyond the list it falls back to
+  // "Universe N".
+  UNIVERSE_NAMES: [
+    "Quark", "Nucleon", "Atom", "Molecule", "Cell", "Organism", "Planet",
+    "Star", "Solar System", "Nebula", "Galaxy", "Galaxy Cluster", "Supercluster",
+    "Cosmic Web", "Universe",
+  ],
 
   // --- Visuals ---------------------------------------------------------------
   // One palette per universe (chosen by universe index, cycling).

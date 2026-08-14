@@ -56,12 +56,19 @@ HP equals `boardCost`). The reward for a whole board (`boardReward = REWARD_RATI
 boardCost`) is split the same way. This decouples the metrics from the *number and
 shape* of the blocks — you can change the grid freely without touching the balance.
 
-There is **no hard-coded "×10 per universe"** any more. A universe spans one
-meta-board (≈ `blocks` levels), so its difficulty multiplier vs the one below is
-simply `COST_GROWTH^blocks` — with `1.1` and ~24 blocks that lands near ×10 on its
-own. `universeCost` / `universeMultiplier` in `economy.js` derive it. The `Meta` stat
-in the HUD is `state.universe` (how many you have finished); it advances only on
-**ascension**, which also grants a bonus (`ascendBonus`).
+There is **no hard-coded "×10 per universe"** any more. The grid is a **fixed
+`GRID_COLS × GRID_ROWS` (6×4 = 24 blocks) on every device** — the mobile layout —
+so a universe always spans exactly 24 levels and its difficulty multiplier vs the
+one below is `COST_GROWTH^24 ≈ 9.85`, near ×10 on its own. `universeCost` /
+`universeMultiplier` in `economy.js` derive it. The `Meta` stat in the HUD reads
+`universe.level` (e.g. `2.4` = universe 2, four levels deep); the universe part
+advances only on **ascension**, which grants a bonus (`ascendBonus`) and shows an
+interlude naming the next scale (`UNIVERSE_NAMES`: Quark → Nucleon → Atom → …).
+A fresh game opens on an intro panel introducing the Quark you start inside.
+
+Block HP is shared across the grid by **random weights** (that still sum to
+`boardCost`), so bricks start visibly varied, and each brick's **colour tracks its
+remaining HP** within the universe's palette.
 
 Because costs grow exponentially the numbers get large; they are plain JS **floats**
 (exact to ~1e15, valid to ~1e308), rendered by `economy.formatNum` as integers →
@@ -142,8 +149,9 @@ More upgrades can be re-introduced later; they belong in `config.js`/`economy.js
   `COST_GROWTH`), reward (`REWARD_RATIO`), ascension bonus (`ASCEND_BONUS_MULT`), ball
   damage/merge (`DMG_BASE`, `MERGE_REQUIRED`, `MERGE_DAMAGE_MULT`), ball price
   (`BALL_BASE_COST`, `BALL_COST_GROWTH`), cap (`LEVEL1_CAP`), feel (`ZOOM_DUR`,
-  `HUNT_GRACE`, `ASCEND_DUR`), grid density (`GRID_TARGET`). Open `stats.html` to see
-  the effect of any change on the cost/reward curves before committing it.
+  `HUNT_GRACE`, `ASCEND_DUR`), grid (`GRID_COLS`, `GRID_ROWS`, `CELL_MAX`), universe
+  names (`UNIVERSE_NAMES`). Open `stats.html` to see the effect of any change on the
+  cost/reward curves before committing it.
 - **Formulas** (the *shape* of the curves): `economy.js`.
 - **Time-per-level / how long a universe takes**: `stats.html`'s time chart uses
   `stats.js` — geometric clear-time ratios measured by `simul.html`. If you change

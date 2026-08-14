@@ -58,6 +58,17 @@ IC.economy = {
     return p[((index % p.length) + p.length) % p.length];
   },
 
+  // Blocks per board = levels per universe (fixed grid).
+  blocksPerBoard() {
+    return IC.config.GRID_COLS * IC.config.GRID_ROWS;
+  },
+
+  // Name of a universe (1-based). Falls back to "Universe N" past the list.
+  universeName(u) {
+    const names = IC.config.UNIVERSE_NAMES;
+    return names[u - 1] || ("Universe " + u);
+  },
+
   // Big-number display: integers, then K / M / B, then scientific.
   formatNum(n) {
     if (!isFinite(n)) return "∞";

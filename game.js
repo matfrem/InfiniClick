@@ -89,23 +89,22 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Grid geometry. Every board shares the same layout because every board is
-  // drawn full-screen (the zoom is a camera effect, not a change in grid size).
+  // Grid geometry. The block COUNT is fixed (the mobile layout) on every device
+  // so the metrics never depend on screen size; only the cell scales to fit.
+  // The grid sits in the upper half so the balls have room to roam below it.
   // ---------------------------------------------------------------------------
   function layoutGrid() {
-    const target = C.GRID_TARGET;
-    const cols = Math.max(6, Math.floor(W / target));
-    const cell = Math.min(96, Math.floor(W / cols));
-    const rows = Math.max(3, Math.floor((H * 0.52) / cell));
+    const cols = C.GRID_COLS;
+    const rows = C.GRID_ROWS;
+    const cell = Math.max(24, Math.min(C.CELL_MAX, Math.floor(W / cols), Math.floor((H * 0.5) / rows)));
 
-    const colsChanged = cols !== runtime.cols;
     runtime.cols = cols;
     runtime.rows = rows;
     runtime.cell = cell;
     runtime.marginX = (W - cols * cell) / 2;
-    runtime.marginTop = cell * 0.6;
+    runtime.marginTop = cell * 0.5;
 
-    if (!runtime.board || colsChanged) ensureBoards(true);
+    if (!runtime.board) ensureBoards(true);
   }
 
   function blockRect(r, c) {
@@ -130,12 +129,14 @@
   function makeBoard(level, universe) {
     const cost = E.boardCost(level);
     const reward = E.boardReward(level);
-    const pal = E.paletteFor(universe);
 
+    // Random per-block weights (with a gentle bottom-heavier bias) that still sum
+    // to the board's cost — so blocks start visibly different but the total HP
+    // (the metric) is unchanged no matter the grid or randomness.
     const cells = [];
     for (let r = 0; r < runtime.rows; r++) {
       for (let c = 0; c < runtime.cols; c++) {
-        cells.push({ r, c, w: 1 + r * 0.15 + Math.random() * 0.4 });
+        cells.push({ r, c, w: 0.55 + r * 0.12 + Math.random() * 0.9 });
       }
     }
     const sum = cells.reduce((a, b) => a + b.w, 0) || 1;
@@ -149,12 +150,22 @@
         hp,
         maxHp: hp,
         reward: reward * share,
-        color: pal[(cell.r + cell.c) % pal.length],
         hit: 0,
         alive: true,
       };
     });
-    return { blocks, portalIndex: null, universe };
+    const maxBlockHp = blocks.reduce((m, b) => Math.max(m, b.maxHp), 0) || 1;
+    return { blocks, portalIndex: null, universe, maxBlockHp };
+  }
+
+  // A block's colour tracks its REMAINING HP within the universe's palette, so a
+  // tough/fresh brick and a nearly-broken one read differently, and the varied
+  // starting HP already spreads the fresh board across the palette.
+  function blockColor(board, block) {
+    const pal = E.paletteFor(board.universe);
+    const ratio = clamp01(block.hp / board.maxBlockHp);
+    const idx = Math.round((1 - ratio) * (pal.length - 1));
+    return pal[clamp(idx, 0, pal.length - 1)];
   }
 
   function pickPortal(board) {
@@ -261,7 +272,7 @@
     runtime.fragTimestamps.push(performance.now());
 
     const rect = blockRect(block.r, block.c);
-    spawnParticles(rect.x + rect.w / 2, rect.y + rect.h / 2, block.color);
+    spawnParticles(rect.x + rect.w / 2, rect.y + rect.h / 2, blockColor(runtime.board, block));
     runtime.floaters.push({
       x: rect.x + rect.w / 2,
       y: rect.y + rect.h / 2,
@@ -277,7 +288,7 @@
     if (!block.alive) return;
     block.hp -= dmg;
     block.hit = 1;
-    spawnParticles(cx, cy, block.color, 4);
+    spawnParticles(cx, cy, blockColor(runtime.board, block), 4);
     runtime.floaters.push({
       x: cx,
       y: cy - 6,
@@ -342,7 +353,7 @@
     meta.blocks[portal].alive = false;
     runtime.pending = { meta, portal };
 
-    runtime.interlude = { life: C.ASCEND_DUR, total: C.ASCEND_DUR, level: state.universe };
+    runtime.interlude = { life: C.ASCEND_DUR, total: C.ASCEND_DUR, name: E.universeName(state.universe) };
     runtime.phase = "ascend";
     save();
     updateHud();
@@ -564,12 +575,13 @@
       const hpRatio = block.hp / block.maxHp;
       const r = Math.min(10, rect.w * 0.18);
 
+      const col = blockColor(board, block);
       ctx.save();
       ctx.globalAlpha = baseAlpha * (0.35 + 0.65 * hpRatio);
       roundRect(rect.x, rect.y, rect.w, rect.h, r);
       const grad = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-      grad.addColorStop(0, block.color);
-      grad.addColorStop(1, shade(block.color, -0.35));
+      grad.addColorStop(0, col);
+      grad.addColorStop(1, shade(col, -0.35));
       ctx.fillStyle = grad;
       ctx.fill();
 
@@ -733,7 +745,7 @@
     ctx.globalAlpha = a;
     ctx.fillStyle = "#56d3c9";
     ctx.font = "800 30px Inter, system-ui, sans-serif";
-    ctx.fillText("LEVEL " + it.level + " " + dots, cx, cy + R * 0.2 + 34);
+    ctx.fillText(it.name.toUpperCase() + " " + dots, cx, cy + R * 0.2 + 34);
 
     const bw = Math.min(W * 0.5, 320), bh = 6;
     const bx = cx - bw / 2, by = cy + R * 0.2 + 64;
@@ -807,6 +819,19 @@
   }
 
   canvas.addEventListener("pointerdown", (e) => onPointer(e.clientX, e.clientY));
+
+  // Intro overlay — shown only on a brand-new game (or after a reset), naming the
+  // universe you begin inside (a Quark) and how to play.
+  const introEl = document.getElementById("intro");
+  function showIntro() {
+    const name = E.universeName(state.universe);
+    introEl.querySelector(".intro-name").textContent = name;
+    introEl.querySelector(".intro-body").textContent =
+      `the smallest speck there is. Shatter every brick to zoom out and discover what contains it.`;
+    introEl.classList.remove("hidden");
+  }
+  function hideIntro() { introEl.classList.add("hidden"); }
+  if (introEl) introEl.addEventListener("pointerdown", (e) => { e.stopPropagation(); hideIntro(); });
 
   let hintHidden = false;
   function hideHint() {
@@ -910,9 +935,16 @@
   const fpsEl = document.getElementById("fps");
   const boardEl = document.getElementById("board");
 
+  // "2.4" = universe 2, four levels deep into it.
+  function metaLabel() {
+    const per = E.blocksPerBoard();
+    const sub = clamp(state.level - (state.universe - 1) * per, 0, per);
+    return state.universe + "." + sub;
+  }
+
   function updateHud() {
     fragEl.textContent = E.formatNum(state.fragments);
-    if (boardEl) boardEl.textContent = state.universe;
+    if (boardEl) boardEl.textContent = metaLabel();
     refreshShop();
   }
 
@@ -984,6 +1016,7 @@
     renderBallBar();
     updateHud();
     save();
+    showIntro();
   }
 
   document.getElementById("reset").addEventListener("click", () => {
@@ -1027,6 +1060,8 @@
     renderShop();
     renderBallBar();
     updateHud();
+    // Greet new players (fresh game only, not every reload).
+    if (state.level === 0 && state.universe === 1 && state.ballsBought === 0) showIntro();
     window.addEventListener("resize", resize);
     if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
     requestAnimationFrame((t) => { last = t; frame(t); });

@@ -245,6 +245,17 @@
       ctx.fillStyle = "#8b98a5"; ctx.textAlign = "center";
       ctx.fillText(opts.xLabel || "", padL + plotW / 2, cssH - 12);
 
+      // Universe boundaries (a faint vertical line at every N levels).
+      if (opts.uniStep) {
+        ctx.save();
+        ctx.strokeStyle = "#3a2f5a"; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+        for (let x = opts.uniStep; x <= xMax; x += opts.uniStep) {
+          const px = xToPx(x);
+          ctx.beginPath(); ctx.moveTo(px, padT); ctx.lineTo(px, padT + plotH); ctx.stroke();
+        }
+        ctx.restore();
+      }
+
       // Series lines.
       for (const s of series) {
         ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.beginPath();
@@ -291,14 +302,14 @@
         { label: "Board cost (HP)", color: "#ff8fab", points: cost },
         { label: "Board reward (shards)", color: "#56d3c9", points: reward },
         { label: "Ball power (total dmg, greedy)", color: "#ffcf6b", points: power },
-      ], { xMin: 0, xMax: LMAX, xLabel: "level", height: 320 });
+      ], { xMin: 0, xMax: LMAX, xLabel: "level (dashed = new universe)", height: 320, uniStep: BLOCKS });
 
       // Chart: time per level.
       const tpl = [];
       for (let L = 0; L <= LMAX; L++) tpl.push({ x: L, y: timeForLevel(L, load[L]) });
       drawChart(document.getElementById("chartTime"), [
         { label: "Seconds to clear the level", color: "#8a7dff", points: tpl },
-      ], { xMin: 0, xMax: LMAX, xLabel: "level", height: 300 });
+      ], { xMin: 0, xMax: LMAX, xLabel: "level (dashed = new universe)", height: 300, uniStep: BLOCKS });
 
       // Ball economy: damage per tier + price per purchase (shared log axis).
       const dmg = [], price = [];
