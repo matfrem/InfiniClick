@@ -47,15 +47,22 @@ IC.economy = {
     return c.BALL_BASE_COST * Math.pow(c.BALL_COST_GROWTH, bought);
   },
 
-  // Bonus shards for ascending to the next universe from `level`.
-  ascendBonus(level) {
-    return this.boardReward(level) * IC.config.ASCEND_BONUS_MULT;
+  // Bonus shards for ascending to the next universe — scaled to your ball price,
+  // so it is always worth roughly ASCEND_BONUS_MULT more balls (a real boost).
+  ascendBonus(ballsBought) {
+    return this.ballCost(ballsBought) * IC.config.ASCEND_BONUS_MULT;
   },
 
   // The colour palette for a given universe index (cycles).
   paletteFor(index) {
     const p = IC.config.PALETTES;
     return p[((index % p.length) + p.length) % p.length];
+  },
+
+  // The dark screen background for a given universe index (cycles).
+  backgroundFor(index) {
+    const b = IC.config.BACKGROUNDS;
+    return b[((index % b.length) + b.length) % b.length];
   },
 
   // Blocks per board = levels per universe (fixed grid).

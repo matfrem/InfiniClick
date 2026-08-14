@@ -142,12 +142,13 @@
 
     // ---- run the measurement ------------------------------------------------
     function run() {
+      const NMAX = 20;
       const hps1 = measureHitsPerSecond(20, HPS_RUNS);
       const clear = {};
-      for (let n = 1; n <= 10; n++) clear[n] = measureClearTime(n, CLEAR_RUNS, 300);
+      for (let n = 1; n <= NMAX; n++) clear[n] = measureClearTime(n, CLEAR_RUNS, 300);
 
       const rows = ["<tr><th>Balls</th><th style='text-align:right'>Clear time (s)</th><th style='text-align:right'>Hits/s total</th></tr>"];
-      for (let n = 1; n <= 10; n++) rows.push(`<tr><td>${n}</td><td class="num">${clear[n].toFixed(2)}</td><td class="num">${(hps1 * n).toFixed(1)}</td></tr>`);
+      for (let n = 1; n <= NMAX; n++) rows.push(`<tr><td>${n}</td><td class="num">${clear[n].toFixed(2)}</td><td class="num">${(hps1 * n).toFixed(1)}</td></tr>`);
       document.getElementById("results").innerHTML = rows.join("");
       document.getElementById("hps").innerHTML = `One ball lands <b>${hps1.toFixed(2)} hits/s</b> on a full board. Balls do not collide with each other, so N balls land ≈ N× that.`;
       document.getElementById("status").textContent = "done";

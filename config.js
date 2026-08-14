@@ -27,16 +27,19 @@ IC.config = {
   HP_BASE: 200,
   COST_GROWTH: 1.1,
   REWARD_RATIO: 0.6,        // shards earned for clearing a whole board = ratio * cost
-  ASCEND_BONUS_MULT: 8,     // universe-up bonus = this * boardReward(level)
+  ASCEND_BONUS_MULT: 8,     // universe-up bonus = this * the cost of your next ball
+                            // (i.e. ≈ enough shards to buy this many more balls)
 
   // --- Balls -----------------------------------------------------------------
   // A tier-T ball deals DMG_BASE * (MERGE_REQUIRED * MERGE_DAMAGE_MULT) ^ (T-1).
   // With 10 and 3 that is 10 → 300 → 9000 → … : a merged ball is worth 3x the ten
   // balls it consumed, so merging is always the right move (ZenShards-style).
   DMG_BASE: 10,
-  MERGE_REQUIRED: 10,       // balls of a tier needed to merge into the next
+  MERGE_REQUIRED: 10,       // balls consumed by one merge (10 -> 1 of the next tier)
   MERGE_DAMAGE_MULT: 2,     // a merged ball is worth this * the balls it consumed
-  LEVEL1_CAP: 10,           // max level-1 balls you may hold before you must merge
+  LEVEL1_CAP: 20,           // max tier-1 balls you may hold (merge is optional from 10)
+  SIM_MERGE_AT: 15,         // the stats greedy model merges once a tier reaches this,
+                            // so it never drops from 10 balls to 1 (a smoother curve)
   BALL_BASE_COST: 100,      // cost of your very first bought level-1 ball
   BALL_COST_GROWTH: 1.12,   // the next level-1 ball costs this^(total ever bought)
   MAX_BALLS: 60,            // hard cap on simultaneous balls (performance)
@@ -64,7 +67,8 @@ IC.config = {
   ],
 
   // --- Visuals ---------------------------------------------------------------
-  // One palette per universe (chosen by universe index, cycling).
+  // One palette per universe (chosen by universe index, cycling). Each palette
+  // has a matching dark BACKGROUND that fills the whole screen for that universe.
   PALETTES: [
     ["#56d3c9", "#8a7dff", "#ffcf6b", "#ff8fab", "#7bd88f"], // aqua & violet
     ["#ff9f68", "#ffd66b", "#ff6b6b", "#c44dff", "#ff8fab"], // warm ember
@@ -73,6 +77,15 @@ IC.config = {
     ["#ff8fab", "#ff6bd0", "#c44dff", "#8a7dff", "#ff9fe0"], // magenta bloom
     ["#ffd66b", "#ffb347", "#ff8c42", "#ff6b6b", "#f9e784"], // amber sun
     ["#a0a0ff", "#c9b8ff", "#8affd6", "#7bd8ff", "#d0b0ff"], // pastel nebula
+  ],
+  BACKGROUNDS: [
+    "#08161a", // aqua & violet
+    "#180d08", // warm ember
+    "#080e1c", // deep ocean
+    "#0a1610", // meadow
+    "#160814", // magenta bloom
+    "#171006", // amber sun
+    "#100e1a", // pastel nebula
   ],
   BALL_COLORS: ["#56d3c9", "#8a7dff", "#ffcf6b", "#ff8fab", "#7bd88f", "#f5f5f5"],
 };

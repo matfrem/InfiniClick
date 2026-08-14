@@ -56,9 +56,11 @@ charts them live. There is a single growth law, not a special per-universe rule.
   That interplay of `COST_GROWTH` vs `MERGE_DAMAGE_MULT` and the ball price is the core
   of the balance — a smaller `MERGE_DAMAGE_MULT` makes the time-per-level sawtooth
   (each tooth is a forced merge) shallower.
-- **Prestige = ascension.** Finishing a meta-board grants `ascendBonus(L) =
-  ASCEND_BONUS_MULT · boardReward(L)`. Classic prestige math (Pecorella, Part III)
-  applies: make the bonus worth roughly the time the universe took.
+- **Prestige = ascension.** Finishing a meta-board grants `ascendBonus =
+  ASCEND_BONUS_MULT · ballCost(ballsBought)` — deliberately tied to your *ball price*
+  rather than to board reward, so the bonus is always worth ~`ASCEND_BONUS_MULT` more
+  balls no matter how deep you are (a reliably useful boost). Classic prestige math
+  (Pecorella, Part III) applies: make it worth roughly the time the universe took.
 
 ### Knobs, and which direction to turn them (all in `config.js`)
 

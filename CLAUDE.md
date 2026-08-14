@@ -60,15 +60,19 @@ There is **no hard-coded "×10 per universe"** any more. The grid is a **fixed
 `GRID_COLS × GRID_ROWS` (6×4 = 24 blocks) on every device** — the mobile layout —
 so a universe always spans exactly 24 levels and its difficulty multiplier vs the
 one below is `COST_GROWTH^24 ≈ 9.85`, near ×10 on its own. `universeCost` /
-`universeMultiplier` in `economy.js` derive it. The `Meta` stat in the HUD reads
-`universe.level` (e.g. `2.4` = universe 2, four levels deep); the universe part
-advances only on **ascension**, which grants a bonus (`ascendBonus`) and shows an
-interlude naming the next scale (`UNIVERSE_NAMES`: Quark → Nucleon → Atom → …).
-A fresh game opens on an intro panel introducing the Quark you start inside.
+`universeMultiplier` in `economy.js` derive it. The HUD stat reads the current
+**era** — the universe's name and how far through it you are (e.g. `28%` under
+`QUARK ERA`); it advances only on **ascension**, which grants a bonus (`ascendBonus`,
+scaled to your ball price so it always buys ~`ASCEND_BONUS_MULT` more balls) and shows
+an interlude naming the next scale and the shards awarded (`UNIVERSE_NAMES`: Quark →
+Nucleon → Atom → …). A fresh game opens on an intro panel introducing the Quark you
+start inside.
 
-Block HP is shared across the grid by **random weights** (that still sum to
-`boardCost`), so bricks start visibly varied, and each brick's **colour tracks its
-remaining HP** within the universe's palette.
+Each universe has its **own palette and a dark background** (`PALETTES` /
+`BACKGROUNDS`) that fills the whole screen; the panels (top bar, shop) float over it,
+and the play-field is a plain square outline, not a rounded panel. Block HP is shared
+across the grid by **random weights** (that still sum to `boardCost`), so bricks start
+visibly varied, and each brick's **colour tracks its remaining HP** within the palette.
 
 Because costs grow exponentially the numbers get large; they are plain JS **floats**
 (exact to ~1e15, valid to ~1e308), rendered by `economy.formatNum` as integers →
@@ -79,9 +83,11 @@ ratios live; `docs/idle-game-tuning.md` explains the math.
 ## Balls & tiers
 
 Balls come in **tiers**. Buying an **Extra Ball** always adds a **tier-1** ball — the
-only ones you can buy — and you may hold at most **ten** (`LEVEL1_CAP`); past that you
-must merge. Ten balls of a tier **merge** (button in the ball banner) into one of the
-next tier. Damage rises steeply per tier,
+only ones you can buy — and you may hold up to **`LEVEL1_CAP` (20)**; merging is
+available from ten but never forced until the cap, so the count never collapses 10→1.
+Ten balls of a tier **merge** (button in the ball banner) into one of the next tier.
+(The stats model assumes you merge at `SIM_MERGE_AT` = 15, i.e. 15→6, for a smoother
+curve.) Damage rises steeply per tier,
 
 ```
 ballDamage(T) = DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)^(T-1)   // 10, 200, 4000, …
@@ -148,7 +154,7 @@ scaled to the canvas) and draws everything through it; the fractal zoom is a cam
 
 ## Shop
 
-For now the only purchase is **Extra Ball** (a tier-1 ball, capped at ten), and the
+For now the only purchase is **Extra Ball** (a tier-1 ball, capped at twenty), and the
 only other action is **merging** ten balls of a tier into one of the next. Everything
 else — damage, income — is derived from balls, merges and how deep you have climbed.
 More upgrades can be re-introduced later; they belong in `config.js`/`economy.js`.
@@ -157,11 +163,12 @@ More upgrades can be re-introduced later; they belong in `config.js`/`economy.js
 
 - **Everything balance-related**: `config.js`. Board HP curve (`HP_BASE`,
   `COST_GROWTH`), reward (`REWARD_RATIO`), ascension bonus (`ASCEND_BONUS_MULT`), ball
-  damage/merge (`DMG_BASE`, `MERGE_REQUIRED`, `MERGE_DAMAGE_MULT`), ball price
-  (`BALL_BASE_COST`, `BALL_COST_GROWTH`), cap (`LEVEL1_CAP`), feel (`ZOOM_DUR`,
+  damage/merge (`DMG_BASE`, `MERGE_REQUIRED`, `MERGE_DAMAGE_MULT`, `SIM_MERGE_AT`), ball
+  price (`BALL_BASE_COST`, `BALL_COST_GROWTH`), cap (`LEVEL1_CAP`), feel (`ZOOM_DUR`,
   `HUNT_GRACE`, `ASCEND_DUR`), grid (`GRID_COLS`, `GRID_ROWS`), ball speed
-  (`BALL_SPEED`, in field units), universe names (`UNIVERSE_NAMES`). Open `stats.html`
-  to see the effect of any change on the cost/reward curves before committing it.
+  (`BALL_SPEED`, in field units), palettes/backgrounds (`PALETTES`, `BACKGROUNDS`),
+  universe names (`UNIVERSE_NAMES`). Open `stats.html` to see the effect of any change
+  on the cost/reward curves before committing it.
 - **Formulas** (the *shape* of the curves): `economy.js`.
 - **Time-per-level / how long a universe takes**: `stats.html`'s time chart uses
   `stats.js` — geometric clear-time ratios measured by `simul.html`. If you change

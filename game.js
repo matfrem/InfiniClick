@@ -278,7 +278,7 @@
   }
 
   function startAscension() {
-    const bonus = E.ascendBonus(state.level);
+    const bonus = E.ascendBonus(state.ballsBought);
     state.fragments += bonus;
     state.universe += 1;
 
@@ -287,7 +287,7 @@
     meta.blocks[portal].alive = false;
     runtime.pending = { meta, portal };
 
-    runtime.interlude = { life: C.ASCEND_DUR, total: C.ASCEND_DUR, name: E.universeName(state.universe) };
+    runtime.interlude = { life: C.ASCEND_DUR, total: C.ASCEND_DUR, name: E.universeName(state.universe), bonus };
     runtime.phase = "ascend";
     save();
     updateHud();
@@ -447,11 +447,6 @@
     ctx.translate(v.offX, v.offY);
     ctx.scale(v.scale, v.scale);
 
-    // Faint backdrop so the square play-field reads as a contained space.
-    ctx.fillStyle = "#0a0e14";
-    roundRect(0, 0, FIELD, FIELD, 28);
-    ctx.fill();
-
     if (runtime.phase === "play" || runtime.phase === "hunt") {
       drawBoard(runtime.board, FULL_RECT(), 1, true, runtime.phase === "hunt");
       drawParticles();
@@ -471,6 +466,11 @@
       }
     }
 
+    // A light square outline marks the play-field (no rounded panel here).
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(0, 0, FIELD, FIELD);
+
     ctx.restore();
     drawAnnounce();
   }
@@ -478,7 +478,7 @@
   function drawBoard(board, dest, alpha, withBalls, portalHint) {
     ctx.save();
     ctx.beginPath();
-    roundRect(0, 0, FIELD, FIELD, 28);
+    ctx.rect(0, 0, FIELD, FIELD);
     ctx.clip();
     ctx.translate(dest.x, dest.y);
     ctx.scale(dest.w / FIELD, dest.h / FIELD);
@@ -657,8 +657,15 @@
     ctx.font = "800 30px Inter, system-ui, sans-serif";
     ctx.fillText(it.name.toUpperCase() + " " + dots, cx, cy + R * 0.2 + 34);
 
+    if (it.bonus) {
+      ctx.globalAlpha = a;
+      ctx.fillStyle = "#ffcf6b";
+      ctx.font = "700 18px Inter, system-ui, sans-serif";
+      ctx.fillText("+" + E.formatNum(it.bonus) + " shards", cx, cy + R * 0.2 + 64);
+    }
+
     const bw = Math.min(W * 0.5, 320), bh = 6;
-    const bx = cx - bw / 2, by = cy + R * 0.2 + 64;
+    const bx = cx - bw / 2, by = cy + R * 0.2 + 88;
     ctx.globalAlpha = a * 0.3;
     ctx.fillStyle = "#223041";
     roundRect(bx, by, bw, bh, 3);
@@ -791,7 +798,7 @@
         <span class="u-level">${count} / ${C.LEVEL1_CAP}</span>
       </div>
       <div class="u-desc">A tier-1 ball dealing ${E.formatNum(E.ballDamage(1))} damage. Merge ten into a stronger one.</div>
-      <div class="u-cost">${capped ? "Max 10 — merge them" : E.formatNum(cost)}</div>
+      <div class="u-cost">${capped ? "Max " + C.LEVEL1_CAP + " — merge them" : E.formatNum(cost)}</div>
     `;
     btn.addEventListener("click", buyBall);
     shopEl.appendChild(btn);
@@ -847,17 +854,31 @@
   const fragEl = document.getElementById("fragments");
   const fpsEl = document.getElementById("fps");
   const boardEl = document.getElementById("board");
+  const metaLabelEl = document.getElementById("metaLabel");
+  const appEl = document.getElementById("app");
 
-  // "2.4" = universe 2, four levels deep.
-  function metaLabel() {
+  // How far through the current universe (its 24 sub-levels), 0..100%.
+  function eraProgress() {
     const per = E.blocksPerBoard();
     const sub = clamp(state.level - (state.universe - 1) * per, 0, per);
-    return state.universe + "." + sub;
+    return Math.round((sub / per) * 100);
+  }
+
+  // Paint the whole page in the current universe's dark backdrop.
+  let themedUniverse = -1;
+  function applyTheme() {
+    if (state.universe === themedUniverse) return;
+    themedUniverse = state.universe;
+    const bg = E.backgroundFor(state.universe);
+    document.documentElement.style.background = bg;
+    document.body.style.background = bg;
   }
 
   function updateHud() {
     fragEl.textContent = E.formatNum(state.fragments);
-    if (boardEl) boardEl.textContent = metaLabel();
+    if (boardEl) boardEl.textContent = eraProgress() + "%";
+    if (metaLabelEl) metaLabelEl.textContent = E.universeName(state.universe) + " era";
+    applyTheme();
     refreshShop();
   }
 

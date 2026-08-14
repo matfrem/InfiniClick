@@ -99,6 +99,7 @@
     // Walks the levels, accumulating shards (board rewards + ascension bonuses)
     // and spending them immediately on tier-1 balls, merging up the chain. For
     // each level it records the resulting loadout (ball count + total damage).
+    const MERGE_AT = C.SIM_MERGE_AT || C.MERGE_REQUIRED;
     function greedyLoadout(lmax) {
       let shards = 0, bought = 0;
       const balls = { 1: 1 };   // the one free starting ball
@@ -110,8 +111,10 @@
           if ((balls[1] || 0) < C.LEVEL1_CAP && shards >= E.ballCost(bought)) {
             shards -= E.ballCost(bought); bought++; balls[1] = (balls[1] || 0) + 1; changed = true;
           }
+          // Merge only once a tier reaches MERGE_AT (15), consuming MERGE_REQUIRED
+          // (10) — so it drops 15 -> 6, never 10 -> 1, smoothing the curve.
           for (const t of Object.keys(balls).map(Number)) {
-            while ((balls[t] || 0) >= C.MERGE_REQUIRED) {
+            while ((balls[t] || 0) >= MERGE_AT) {
               balls[t] -= C.MERGE_REQUIRED; balls[t + 1] = (balls[t + 1] || 0) + 1; changed = true;
             }
           }
@@ -121,9 +124,9 @@
         spend();
         let N = 0, dmg = 0;
         for (const t of Object.keys(balls).map(Number)) { N += balls[t]; dmg += balls[t] * E.ballDamage(t); }
-        out.push({ L, N, dmg });
+        out.push({ L, N, dmg, bought });
         shards += E.boardReward(L);
-        if ((L + 1) % BLOCKS === 0) shards += E.ascendBonus(L);
+        if ((L + 1) % BLOCKS === 0) shards += E.ascendBonus(bought);
       }
       return out;
     }
@@ -342,6 +345,7 @@
         ["Ball damage — tier 1 / 2 / 3", E.formatNum(E.ballDamage(1)) + " / " + E.formatNum(E.ballDamage(2)) + " / " + E.formatNum(E.ballDamage(3))],
         ["Ball price — 1st / 11th / 21st", E.formatNum(E.ballCost(0)) + " / " + E.formatNum(E.ballCost(10)) + " / " + E.formatNum(E.ballCost(20))],
         ["Ball power at end of universe 1", E.formatNum(endU1.dmg) + " dmg (" + endU1.N + " balls)"],
+        ["Ascension bonus (end of universe 1)", E.formatNum(E.ascendBonus(endU1.bought)) + " shards ≈ " + C.ASCEND_BONUS_MULT + " balls"],
         ["⏱ Time — universe 1 / 2 / 3", fmtTime(universeTime(1)) + " / " + fmtTime(universeTime(2)) + " / " + fmtTime(universeTime(3))],
         ["⏱ Time to reach universe 4", fmtTime(universeTime(1) + universeTime(2) + universeTime(3))],
       ];
