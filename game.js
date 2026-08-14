@@ -33,6 +33,7 @@
     ballCounts: { 1: 1 }, // tier -> number of balls owned
     ballsBought: 0,       // total tier-1 balls ever bought (prices the next one)
     powerLevel: 0,        // Power upgrades bought (global damage multiplier)
+    clickLevel: 0,        // Click Power upgrades bought (manual-tap multiplier, capped)
   });
 
   const state = DEFAULT_STATE();
@@ -115,7 +116,7 @@
     const blocks = cells.map((cell) => {
       const share = cell.w / sum;
       const hp = hpTotal * share;
-      return { r: cell.r, c: cell.c, hp, maxHp: hp, reward: reward * share, hit: 0, alive: true };
+      return { r: cell.r, c: cell.c, hp, maxHp: hp, reward: reward * share, hit: 0, label: 0, alive: true };
     });
     const maxBlockHp = blocks.reduce((m, b) => Math.max(m, b.maxHp), 0) || 1;
     return { blocks, portalIndex: null, universe, maxBlockHp };
@@ -156,6 +157,12 @@
   // Balls (tiered: a tier-T ball deals economy.ballDamage(T))
   // ---------------------------------------------------------------------------
   function ballDamageOf(ball) { return E.ballDamage(ball.level) * E.powerMultiplier(state.powerLevel); }
+
+  // A manual tap deals a tier-1 hit boosted by BOTH the global Power upgrade and
+  // the dedicated (capped) Click Power upgrade.
+  function clickDamage() {
+    return E.ballDamage(1) * E.powerMultiplier(state.powerLevel) * E.powerMultiplier(state.clickLevel);
+  }
 
   function makeBall(tier) {
     const angle = Math.random() * TAU;
@@ -236,9 +243,13 @@
     if (!block.alive) return;
     block.hp -= dmg;
     block.hit = 1;
+    block.label = 1;   // show this brick's HP number for ~1s after it's touched
     spawnParticles(cx, cy, blockColor(runtime.board, block), 4);
     runtime.floaters.push({ x: cx, y: cy - 14, text: "-" + E.formatNum(dmg), life: 0.7, color: "#ffffff", size: 32 });
-    if (block.hp <= 0) breakBlock(block);
+    // Break at display-zero (< 0.05 rounds to "0.0"), so a brick never sits
+    // visibly at 0 waiting for one more click — the fractional remainder is
+    // invisible against the reward, which is fixed per brick anyway.
+    if (block.hp < 0.05) breakBlock(block);
   }
 
   // ---------------------------------------------------------------------------
@@ -412,6 +423,7 @@
   function updateEffects(dt) {
     for (const block of runtime.board.blocks) {
       if (block.hit > 0) block.hit = Math.max(0, block.hit - dt * 6);
+      if (block.label > 0) block.label = Math.max(0, block.label - dt);
     }
     if (runtime.announce) {
       runtime.announce.life -= dt;
@@ -534,9 +546,12 @@
         ctx.lineTo(rect.x + rect.w * 0.35, rect.y + rect.h);
         ctx.stroke();
         ctx.restore();
+      }
 
+      // The HP number shows only for ~1s after the brick is touched, then fades.
+      if (block.label > 0) {
         ctx.save();
-        ctx.globalAlpha = baseAlpha * 0.9;
+        ctx.globalAlpha = baseAlpha * 0.9 * clamp01(block.label * 3);
         ctx.fillStyle = "#0d1117";
         ctx.font = `800 ${Math.round(rect.h * 0.32)}px Inter, system-ui, sans-serif`;
         ctx.textAlign = "center";
@@ -732,7 +747,7 @@
       if (!block.alive) continue;
       const b = LAY.brickRect(block.r, block.c);
       if (pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h) {
-        if (runtime.phase === "play") damageBlock(block, E.ballDamage(1) * E.powerMultiplier(state.powerLevel), pt.x, pt.y);
+        if (runtime.phase === "play") damageBlock(block, clickDamage(), pt.x, pt.y);
         else startZoomIn(i);
         hideHint();
         return;
@@ -799,6 +814,17 @@
     updateHud();
   }
 
+  function buyClickPower() {
+    if (state.clickLevel >= C.CLICK_POWER_CAP) return;
+    const cost = E.powerCost(state.clickLevel);
+    if (state.fragments < cost) return;
+    state.fragments -= cost;
+    state.clickLevel += 1;
+    save();
+    renderShop();
+    updateHud();
+  }
+
   // A compact card: name + level/meta + cost all on one line, a one-line desc
   // below. The whole card gets a gold border when you can afford it.
   function shopCard(name, meta, desc, costText, affordable, onClick) {
@@ -837,11 +863,19 @@
       `+${Math.round((C.POWER_MULT - 1) * 100)}% damage to every ball`,
       E.formatNum(pCost),
       state.fragments >= pCost, buyPower));
+
+    const cCapped = state.clickLevel >= C.CLICK_POWER_CAP;
+    const cCost = E.powerCost(state.clickLevel);
+    shopEl.appendChild(shopCard(
+      "Click Power", cCapped ? `×${E.powerMultiplier(state.clickLevel).toFixed(2)} max` : `${state.clickLevel}/${C.CLICK_POWER_CAP}`,
+      `+${Math.round((C.POWER_MULT - 1) * 100)}% damage when you tap a brick`,
+      cCapped ? "Maxed" : E.formatNum(cCost),
+      !cCapped && state.fragments >= cCost, buyClickPower));
   }
 
   function refreshShop() {
     const cards = shopEl.children;
-    if (cards.length < 2) return;
+    if (cards.length < 3) return;
     const capped = ballCount1() >= C.LEVEL1_CAP;
     const ballAff = !capped && state.fragments >= E.ballCost(state.ballsBought);
     cards[0].disabled = !ballAff;
@@ -849,6 +883,9 @@
     const pAff = state.fragments >= E.powerCost(state.powerLevel);
     cards[1].disabled = !pAff;
     cards[1].classList.toggle("affordable", pAff);
+    const cAff = state.clickLevel < C.CLICK_POWER_CAP && state.fragments >= E.powerCost(state.clickLevel);
+    cards[2].disabled = !cAff;
+    cards[2].classList.toggle("affordable", cAff);
   }
 
   // ---------------------------------------------------------------------------
@@ -947,6 +984,7 @@
         ballCounts: state.ballCounts,
         ballsBought: state.ballsBought,
         powerLevel: state.powerLevel,
+        clickLevel: state.clickLevel,
       }));
     } catch (_) { /* storage unavailable — play unsaved */ }
   }
@@ -962,6 +1000,7 @@
         universe: data.universe ?? 1,
         ballsBought: data.ballsBought ?? 0,
         powerLevel: data.powerLevel ?? 0,
+        clickLevel: data.clickLevel ?? 0,
       });
       if (data.ballCounts && Object.keys(data.ballCounts).length) {
         state.ballCounts = {};

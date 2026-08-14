@@ -43,31 +43,33 @@ IC.config = {
   // bricks break ~5× faster (great with manual clicks) without touching the reward
   // curve. Default 100% for the opening universes; beyond the list it stays at the
   // last value.
-  UNIVERSE_HP_PERCENT: [100, 100, 100, 100],
+  UNIVERSE_HP_PERCENT: [8, 350, 320, 150],
 
   // --- Balls -----------------------------------------------------------------
   // A tier-T ball deals DMG_BASE * (MERGE_REQUIRED * MERGE_DAMAGE_MULT) ^ (T-1).
-  // With 10 and 3 that is 10 → 300 → 9000 → … : a merged ball is worth 3x the ten
-  // balls it consumed, so merging is always the right move (ZenShards-style).
-  // The exponential power source. A shop upgrade that multiplies ALL ball damage.
-  // Its cost is geometric while income is exponential, so you buy ~linearly many
-  // in the global level L — and POWER_MULT^(that) grows EXPONENTIALLY, matching the
+  // With DMG_BASE 1, 10 and 3 that is 1 → 30 → 900 → … : a merged ball is worth 3x
+  // the ten it consumed, so merging is always the right move (ZenShards-style).
+  // The exponential power source. Two shop upgrades multiply damage: POWER for all
+  // balls (the exponential lever) and a capped CLICK power for manual taps. Their
+  // cost is geometric while income is exponential, so you buy ~linearly many in the
+  // global level L — and POWER_MULT^(that) grows EXPONENTIALLY, matching the
   // exponential board cost (the way an idle economy must). Without it, balls-only
   // power is only polynomial and the cost line runs away. Tune against the cost
   // curve in stats.html so "ball power" tracks it.
   POWER_MULT: 1.2,          // damage ×multiplier per Power upgrade bought
   POWER_BASE_COST: 50,
   POWER_COST_GROWTH: 1.3,
+  CLICK_POWER_CAP: 10,      // max Click Power upgrades (reuses POWER_MULT / growth)
 
   DMG_BASE: 1,
   MERGE_REQUIRED: 10,       // balls consumed by one merge (10 -> 1 of the next tier)
-  MERGE_DAMAGE_MULT: 2,     // a merged ball is worth this * the balls it consumed
+  MERGE_DAMAGE_MULT: 3,     // a merged ball is worth this * the balls it consumed
   LEVEL1_CAP: 20,           // max tier-1 balls you may hold (merge is optional from 10)
   SIM_MERGE_AT: 15,         // the stats greedy model merges once a tier reaches this,
                             // so it never drops from 10 balls to 1 (a smoother curve)
   BALL_BASE_COST: 100,      // cost of your very first bought level-1 ball
   BALL_COST_GROWTH: 1.15,   // the next level-1 ball costs this^(total ever bought)
-  BALL_SALE_COUNT: 12,      // the first N balls are on sale (softens the cold open)
+  BALL_SALE_COUNT: 9,       // the first N balls are on sale (softens the cold open)
   BALL_SALE_OFF: 0.9,       // 0.9 = 90% off those first N balls
   MAX_BALLS: 60,            // hard cap on simultaneous balls (performance)
   BALL_SPEED: 520,          // base ball speed in FIELD units/s (see layout.js)

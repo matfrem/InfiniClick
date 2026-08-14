@@ -161,8 +161,10 @@
       const idle = Math.max(geom, dmgLimited);        // pure-idle clear time
       if (CLICKS <= 0) return idle;
       // Clicking is a second, parallel clearing path: you can tap each block
-      // (geometry) but no faster than your click damage allows (damage).
-      const clickTime = Math.max(BLOCKS / CLICKS, hp / (CLICKS * E.ballDamage(1)));
+      // (geometry) but no faster than your click damage allows (damage). A tap
+      // gets the same global Power multiplier the balls do.
+      const clickDmg = E.ballDamage(1) * E.powerMultiplier(load.powerLevel);
+      const clickTime = Math.max(BLOCKS / CLICKS, hp / (CLICKS * clickDmg));
       return 1 / (1 / idle + 1 / clickTime);
     }
 
@@ -185,7 +187,7 @@
 
     // A non-config knob: how many blocks per second you break by tapping. 0 =
     // pure idle. Clicking mainly rescues the slow geometric tail of a clear.
-    let CLICKS = 0;
+    let CLICKS = 3;
 
     const controlsEl = document.getElementById("controls");
     for (const [key, label, step] of KNOBS) {
@@ -194,13 +196,6 @@
       wrap.innerHTML = `<label>${label}</label><input type="number" step="${step}" value="${C[key]}" data-key="${key}">`;
       controlsEl.appendChild(wrap);
     }
-    // Per-universe difficulty steps (universes 2, 3, 4) write into the array.
-    [2, 3, 4].forEach((u) => {
-      const wrap = document.createElement("div");
-      wrap.className = "ctrl";
-      wrap.innerHTML = `<label>Universe ${u} difficulty</label><input type="number" step="10" value="${C.UNIVERSE_COST_STEPS[u - 1]}" data-step="${u - 1}">`;
-      controlsEl.appendChild(wrap);
-    });
     // Per-universe brick HP % (universes 1…4) — HP only, reward stays at 100%.
     [1, 2, 3, 4].forEach((u) => {
       const wrap = document.createElement("div");
@@ -211,7 +206,7 @@
 
     const clickWrap = document.createElement("div");
     clickWrap.className = "ctrl";
-    clickWrap.innerHTML = `<label>Your clicks / sec</label><input type="number" step="1" value="0" data-clicks="1">`;
+    clickWrap.innerHTML = `<label>Your clicks / sec</label><input type="number" step="1" value="3" data-clicks="1">`;
     controlsEl.appendChild(clickWrap);
 
     controlsEl.addEventListener("input", (e) => {

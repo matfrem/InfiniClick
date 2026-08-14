@@ -80,11 +80,11 @@ html, body {
   letter-spacing: 1px;
   color: var(--muted);
 }
-/* The ◈ shard icon in front of the shard counter (matches the brand mark). */
+/* The ◈ shard icon in front of the shard counter — gold, matching the shards. */
 .stat-mark {
-  color: var(--accent);
+  color: var(--gold);
   font-weight: 700;
-  filter: drop-shadow(0 0 8px rgba(86, 211, 201, 0.5));
+  filter: drop-shadow(0 0 8px rgba(255, 207, 107, 0.45));
 }
 
 /* Stage / canvas */
@@ -236,8 +236,9 @@ html, body {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.upgrade.affordable .u-cost::before { content: "◈ "; }
-.upgrade:not(.affordable) .u-cost { color: var(--muted); }
+/* The price always carries the ◈ shard icon and the gold shard colour, even when
+   you can't afford it yet — so it always reads as "this many shards". */
+.upgrade .u-cost::before { content: "◈ "; }
 /* One-line description, ellipsised if it would ever overflow. */
 .upgrade .u-desc {
   font-size: 11px;

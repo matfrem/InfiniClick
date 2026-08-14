@@ -121,10 +121,14 @@ IC.economy = {
     return names[u - 1] || ("Universe " + u);
   },
 
-  // Big-number display: integers, then K / M / B, then scientific.
+  // Big-number display: one decimal under 10 (so 9.7 ≠ 9.9 to the player, and a
+  // brick never reads "0" while still alive), integers to 1000, then K / M / B,
+  // then scientific. Floored, never rounded up, so a value under a threshold never
+  // displays as if it had reached it (e.g. 9.99 shows "9.9", not "10.0").
   formatNum(n) {
     if (!isFinite(n)) return "∞";
     n = Math.max(0, n);
+    if (n < 10) return (Math.floor(n * 10) / 10).toFixed(1);
     if (n < 1000) return String(Math.floor(n));
     if (n < 1e12) {
       const units = [[1e9, "B"], [1e6, "M"], [1e3, "K"]];

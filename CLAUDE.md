@@ -102,10 +102,10 @@ Ten balls of a tier **merge** (button in the ball banner) into one of the next t
 curve.) Damage rises steeply per tier,
 
 ```
-ballDamage(T) = DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)^(T-1)   // 10, 200, 4000, …
+ballDamage(T) = DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)^(T-1)   // 1, 30, 900, …
 ```
 
-so a merged ball out-damages the ten it consumed by `MERGE_DAMAGE_MULT` (default 2×,
+so a merged ball out-damages the ten it consumed by `MERGE_DAMAGE_MULT` (default 3×,
 ZenShards-style) — though you trade ten balls for one, which costs board coverage.
 Each ball's damage is shown in the banner. The next tier-1 ball is priced
 `BALL_BASE_COST · BALL_COST_GROWTH^(balls ever bought)`.
@@ -152,7 +152,7 @@ scaled to the canvas) and draws everything through it; the fractal zoom is a cam
 
 `game.js` lives inside an IIFE (no globals of its own) and is split into sections:
 
-- **`state`** — persisted progress: `fragments`, the global `level`, the `universe` count, `ballCounts` per tier, and `ballsBought`. `DEFAULT_STATE()` is the single source of truth for a fresh game, used at boot and by reset.
+- **`state`** — persisted progress: `fragments`, the global `level`, the `universe` count, `ballCounts` per tier, `ballsBought`, `powerLevel` and `clickLevel`. `DEFAULT_STATE()` is the single source of truth for a fresh game, used at boot and by reset.
 - **`runtime`** — ephemeral, unsaved data: the active `board`, its `parent` meta-board, the current `phase`, an in-flight zoom `anim`, the ascension `interlude`/`pending`, plus balls, particles, floating texts and the banner.
 - **Grid** (`layoutGrid`, `makeBoard`, `pickPortal`, `blockRect`, `cellRectOf`) — lays out blocks responsively and builds whole boards, splitting `E.boardCost(level)` and `E.boardReward(level)` across the blocks by weight.
 - **Boards & phases** (`ensureBoards`, `boardCleared`, `startZoomOut`/`completeZoomOut`, `startZoomIn`/`completeZoomIn`, `startAscension`/`completeAscension`) — the fractal state machine (`play` → `zoomOut` → `hunt` → `zoomIn` → `play`, plus `ascend` between universes).
@@ -160,14 +160,16 @@ scaled to the canvas) and draws everything through it; the fractal zoom is a cam
 - **Physics** (`ballHitsBlock`) — circle/rectangle collision on the axis of least penetration; reflects the ball and, when asked, chips the block (during a hunt it just reports which block was touched so the game can dive in).
 - **Economy** (`breakBlock`, `damageBlock`) — applies damage and pays out each block's pre-computed reward share; all the *numbers* come from `E`.
 - **Update / Rendering** — one update branch per phase; `drawBoard` maps a board into any screen rect (the zoom is an interpolated camera), plus `drawInterlude` for the between-universe screen.
-- **Shop** (`buyBall`, `buyPower`, `renderShop`, `renderBallBar`) — the Extra-Ball and Power purchases and the ball banner with merge buttons.
+- **Shop** (`buyBall`, `buyPower`, `buyClickPower`, `renderShop`, `renderBallBar`) — the Extra-Ball, Power and Click-Power purchases and the ball banner with merge buttons.
 - **Persistence** (`save`, `load`, `resetGame`) — auto-saves to `localStorage` (`C.SAVE_KEY`, currently `…v3`); `resetGame` wipes the save *and* every scrap of live state.
 - **Loop** (`frame`) — `requestAnimationFrame` with a clamped `dt`.
 
 ## Shop
 
-Two purchases: **Extra Ball** (a tier-1 ball, capped at twenty) and **Power**, a
-global multiplicative damage upgrade (`×POWER_MULT` per buy, geometric cost). Plus
+Three purchases: **Extra Ball** (a tier-1 ball, capped at twenty), **Power**, a
+global multiplicative damage upgrade (`×POWER_MULT` per buy, geometric cost), and
+**Click Power**, the same multiplier applied to manual taps but **capped at
+`CLICK_POWER_CAP` (10)** buys (it reuses `POWER_MULT` / `POWER_COST_GROWTH`). Plus
 **merging** ten balls of a tier into one of the next.
 
 **Power is the exponential lever, and it is not optional maths.** Board cost grows
