@@ -10,10 +10,23 @@
 window.IC = window.IC || {};
 
 IC.economy = {
+  // Blocks per board = levels per universe (fixed grid).
+  blocksPerBoard() {
+    return IC.config.GRID_COLS * IC.config.GRID_ROWS;
+  },
+
+  // Which universe (0-indexed) a global level belongs to.
+  universeOfLevel(level) {
+    return Math.floor(level / IC.economy.blocksPerBoard());
+  },
+
   // Total HP of the board at global level L (split across its blocks by weight).
+  // Grows smoothly per level AND jumps by UNIVERSE_COST_MULT each universe, so
+  // higher universes take progressively longer to clear.
   boardCost(level) {
     const c = IC.config;
-    return c.HP_BASE * Math.pow(c.COST_GROWTH, level);
+    const u = IC.economy.universeOfLevel(level);
+    return c.HP_BASE * Math.pow(c.COST_GROWTH, level) * Math.pow(c.UNIVERSE_COST_MULT, u);
   },
 
   // Shards awarded for clearing the whole board at level L (split across blocks).
@@ -30,9 +43,10 @@ IC.economy = {
     return this.boardCost(level) * (Math.pow(g, blocks) - 1) / (g - 1);
   },
 
-  // Multiplier in difficulty from one universe to the next (≈ the old "x10").
+  // Multiplier in difficulty from one universe to the next: the smooth growth over
+  // its levels, times the explicit per-universe jump.
   universeMultiplier(blocks) {
-    return Math.pow(IC.config.COST_GROWTH, blocks);
+    return Math.pow(IC.config.COST_GROWTH, blocks) * IC.config.UNIVERSE_COST_MULT;
   },
 
   // Damage of a single tier-T ball (T = 1 is the only one you can buy).
@@ -63,11 +77,6 @@ IC.economy = {
   backgroundFor(index) {
     const b = IC.config.BACKGROUNDS;
     return b[((index % b.length) + b.length) % b.length];
-  },
-
-  // Blocks per board = levels per universe (fixed grid).
-  blocksPerBoard() {
-    return IC.config.GRID_COLS * IC.config.GRID_ROWS;
   },
 
   // Name of a universe (1-based). Falls back to "Universe N" past the list.

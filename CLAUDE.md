@@ -58,8 +58,11 @@ shape* of the blocks — you can change the grid freely without touching the bal
 
 There is **no hard-coded "×10 per universe"** any more. The grid is a **fixed
 `GRID_COLS × GRID_ROWS` (6×4 = 24 blocks) on every device** — the mobile layout —
-so a universe always spans exactly 24 levels and its difficulty multiplier vs the
-one below is `COST_GROWTH^24 ≈ 9.85`, near ×10 on its own. `universeCost` /
+so a universe always spans exactly 24 levels. Its difficulty multiplier vs the one
+below is `COST_GROWTH^24 ≈ 9.85` (near ×10) **times `UNIVERSE_COST_MULT`** — an extra
+per-universe jump on `boardCost`. Because ball power grows only ~logarithmically with
+income (ball prices inflate) while cost grows with it, that factor makes each universe
+take progressively **longer** than the last instead of levelling off. `universeCost` /
 `universeMultiplier` in `economy.js` derive it. The HUD stat reads the current
 **era** — the universe's name and how far through it you are (e.g. `28%` under
 `QUARK ERA`); it advances only on **ascension**, which grants a bonus (`ascendBonus`,
@@ -162,7 +165,8 @@ More upgrades can be re-introduced later; they belong in `config.js`/`economy.js
 ## Quick customization
 
 - **Everything balance-related**: `config.js`. Board HP curve (`HP_BASE`,
-  `COST_GROWTH`), reward (`REWARD_RATIO`), ascension bonus (`ASCEND_BONUS_MULT`), ball
+  `COST_GROWTH`, `UNIVERSE_COST_MULT`), reward (`REWARD_RATIO`), ascension bonus
+  (`ASCEND_BONUS_MULT`), ball
   damage/merge (`DMG_BASE`, `MERGE_REQUIRED`, `MERGE_DAMAGE_MULT`, `SIM_MERGE_AT`), ball
   price (`BALL_BASE_COST`, `BALL_COST_GROWTH`), cap (`LEVEL1_CAP`), feel (`ZOOM_DUR`,
   `HUNT_GRACE`, `ASCEND_DUR`), grid (`GRID_COLS`, `GRID_ROWS`), ball speed

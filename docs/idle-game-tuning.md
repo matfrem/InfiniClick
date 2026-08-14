@@ -42,9 +42,14 @@ charts them live. There is a single growth law, not a special per-universe rule.
   blocks are free to change without moving the metric. `L` is the global level index,
   bumped by one every board you clear.
 - **No hard ×10.** A universe is one meta-board spanning `blocks` levels, so its
-  difficulty multiplier vs the one below is `COST_GROWTH^blocks`. With `1.1` and ~24
-  blocks that is ≈ 9.85 — the old “×10 per universe” now *emerges* from the growth
-  law. `economy.universeMultiplier(blocks)` reports it; `stats.html` shows it live.
+  difficulty multiplier vs the one below is `COST_GROWTH^blocks` (≈ 9.85 at 1.1 / 24)
+  **times `UNIVERSE_COST_MULT`**, an explicit per-universe jump on top. Ball power
+  grows only ~logarithmically with income (prices inflate) while cost grows with it,
+  so `UNIVERSE_COST_MULT > 1` makes each universe take **longer** than the last. The
+  ramp only bites once you stop one-shotting bricks — early universes stay fast
+  because they are geometry-limited, then times climb steeply (minutes → hours → days
+  by a handful of universes). `economy.universeMultiplier` reports the combined
+  factor; the “Universe difficulty ×” slider in `stats.html` shows it live.
 - **Shard income** tracks cost: `boardReward(L) = REWARD_RATIO · boardCost(L)`, split
   across the blocks the same way. So income rises at the same `COST_GROWTH^L` rate as
   difficulty; the *ratio* (default 0.6) is the dial for how fast shards accumulate.

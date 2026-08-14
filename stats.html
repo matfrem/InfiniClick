@@ -91,7 +91,7 @@
 
     // Blocks per board = levels per universe (a universe is one meta-board).
     const BLOCKS = SIM ? SIM.layout.blocks : 40;
-    const LMAX = 140;   // levels to plot
+    const LMAX = 170;   // levels to plot (covers ~7 universes)
     const TMAX = 8;     // ball tiers to plot
     const NMAX = 100;   // ball purchases to plot
 
@@ -164,6 +164,7 @@
     const KNOBS = [
       ["HP_BASE", "HP base", 10],
       ["COST_GROWTH", "Cost growth /level", 0.01],
+      ["UNIVERSE_COST_MULT", "Universe difficulty ×", 0.5],
       ["REWARD_RATIO", "Reward ratio", 0.05],
       ["ASCEND_BONUS_MULT", "Ascend bonus ×", 0.5],
       ["DMG_BASE", "Ball tier-1 damage", 1],
@@ -346,8 +347,8 @@
         ["Ball price — 1st / 11th / 21st", E.formatNum(E.ballCost(0)) + " / " + E.formatNum(E.ballCost(10)) + " / " + E.formatNum(E.ballCost(20))],
         ["Ball power at end of universe 1", E.formatNum(endU1.dmg) + " dmg (" + endU1.N + " balls)"],
         ["Ascension bonus (end of universe 1)", E.formatNum(E.ascendBonus(endU1.bought)) + " shards ≈ " + C.ASCEND_BONUS_MULT + " balls"],
-        ["⏱ Time — universe 1 / 2 / 3", fmtTime(universeTime(1)) + " / " + fmtTime(universeTime(2)) + " / " + fmtTime(universeTime(3))],
-        ["⏱ Time to reach universe 4", fmtTime(universeTime(1) + universeTime(2) + universeTime(3))],
+        ["⏱ Time per universe (1…6)", [1, 2, 3, 4, 5, 6].map((u) => fmtTime(universeTime(u))).join(" / ")],
+        ["⏱ Total time to finish universe 6", fmtTime([1, 2, 3, 4, 5, 6].reduce((s, u) => s + universeTime(u), 0))],
       ];
       const t = document.getElementById("summary");
       t.innerHTML = "<tr><th>Metric</th><th style='text-align:right'>Value</th></tr>" +

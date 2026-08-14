@@ -26,6 +26,13 @@ IC.config = {
   // e.g. 1.1 ^ 24 ≈ 9.85, roughly ten.
   HP_BASE: 200,
   COST_GROWTH: 1.1,
+  // On top of the smooth per-level growth (COST_GROWTH^24 ≈ 10× per universe), each
+  // universe multiplies board HP by this again. Your ball power grows only
+  // ~logarithmically with income (ball prices inflate) while cost grows with it, so
+  // a factor > 1 makes each universe take steadily LONGER than the last. The ramp
+  // only bites once you stop one-shotting bricks (early universes stay fast because
+  // they are geometry-limited); tune it live in stats.html.
+  UNIVERSE_COST_MULT: 2,
   REWARD_RATIO: 0.6,        // shards earned for clearing a whole board = ratio * cost
   ASCEND_BONUS_MULT: 8,     // universe-up bonus = this * the cost of your next ball
                             // (i.e. ≈ enough shards to buy this many more balls)
