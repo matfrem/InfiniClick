@@ -65,8 +65,14 @@ explicit **per-universe difficulty factor**: the first few are hand-tuned in
 multiplies by `UNIVERSE_COST_MULT`. Because ball power grows only ~logarithmically
 with income (ball prices inflate) while cost grows with it, these factors make each
 universe take progressively **longer** than the last. `economy.universeFactor(u)`
-computes it. `STARTING_BALLS` free balls soften the cold open (universe 1 from
-~17 min to ~5 min). The HUD stat reads the current
+computes it. A **90%-off sale on the first `BALL_SALE_COUNT` balls** (`BALL_SALE_OFF`)
+softens the cold open instead of handing out free balls.
+
+Separately, each universe has a **brick-HP percentage** (`UNIVERSE_HP_PERCENT`, default
+100% for the opening universes) that scales **only the HP**, never the reward: dropping
+a universe to 20% makes its bricks break ~5× faster (great with manual clicks) while the
+reward curve stays put. `economy.boardHp(level) = boardCost(level) · hpPercent`, whereas
+`boardReward` is always paid on the full nominal `boardCost`. The HUD stat reads the current
 **era** — the universe's name and how far through it you are (e.g. `28%` under
 `QUARK ERA`); it advances only on **ascension**, which grants a bonus (`ascendBonus`,
 scaled to your ball price so it always buys ~`ASCEND_BONUS_MULT` more balls) and shows
@@ -176,12 +182,13 @@ line). Tune `POWER_MULT` / `POWER_COST_GROWTH` so power tracks cost; then
 ## Quick customization
 
 - **Everything balance-related**: `config.js`. Board HP curve (`HP_BASE`,
-  `COST_GROWTH`, `UNIVERSE_COST_STEPS`, `UNIVERSE_COST_MULT`), free start
-  (`STARTING_BALLS`), reward (`REWARD_RATIO`), ascension bonus
-  (`ASCEND_BONUS_MULT`), the Power upgrade (`POWER_MULT`, `POWER_BASE_COST`,
+  `COST_GROWTH`, `UNIVERSE_COST_STEPS`, `UNIVERSE_COST_MULT`), per-universe brick-HP %
+  (`UNIVERSE_HP_PERCENT`, HP-only, reward untouched), reward (`REWARD_RATIO`), ascension
+  bonus (`ASCEND_BONUS_MULT`), the Power upgrade (`POWER_MULT`, `POWER_BASE_COST`,
   `POWER_COST_GROWTH`), ball
   damage/merge (`DMG_BASE`, `MERGE_REQUIRED`, `MERGE_DAMAGE_MULT`, `SIM_MERGE_AT`), ball
-  price (`BALL_BASE_COST`, `BALL_COST_GROWTH`), cap (`LEVEL1_CAP`), feel (`ZOOM_DUR`,
+  price (`BALL_BASE_COST`, `BALL_COST_GROWTH`), ball sale (`BALL_SALE_COUNT`,
+  `BALL_SALE_OFF`), cap (`LEVEL1_CAP`), feel (`ZOOM_DUR`,
   `HUNT_GRACE`, `ASCEND_DUR`), grid (`GRID_COLS`, `GRID_ROWS`), ball speed
   (`BALL_SPEED`, in field units), palettes/backgrounds (`PALETTES`, `BACKGROUNDS`),
   universe names (`UNIVERSE_NAMES`). Open `stats.html` to see the effect of any change

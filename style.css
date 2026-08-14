@@ -80,6 +80,12 @@ html, body {
   letter-spacing: 1px;
   color: var(--muted);
 }
+/* The ◈ shard icon in front of the shard counter (matches the brand mark). */
+.stat-mark {
+  color: var(--accent);
+  font-weight: 700;
+  filter: drop-shadow(0 0 8px rgba(86, 211, 201, 0.5));
+}
 
 /* Stage / canvas */
 /* The play area is transparent — the themed screen background shows through,
@@ -208,27 +214,39 @@ html, body {
   background: var(--panel);
   color: var(--text);
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   cursor: pointer;
   transition: transform 0.08s ease, border-color 0.15s ease, background 0.15s ease;
   font: inherit;
 }
-.upgrade:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-1px); }
 .upgrade:active:not(:disabled) { transform: translateY(0); }
-.upgrade:disabled { opacity: 0.5; cursor: not-allowed; }
+.upgrade:disabled { opacity: 0.55; cursor: not-allowed; }
+/* Gold border (and hover lift) whenever the upgrade is affordable. */
+.upgrade.affordable { border-color: var(--gold); }
+.upgrade.affordable:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px var(--gold); }
 
-.upgrade .u-head { display: flex; justify-content: space-between; align-items: baseline; }
+/* One line: name, then meta + cost pushed to the right. */
+.upgrade .u-line { display: flex; align-items: baseline; gap: 8px; }
 .upgrade .u-name { font-weight: 700; font-size: 14px; }
-.upgrade .u-level { font-size: 11px; color: var(--accent-2); font-weight: 700; }
-.upgrade .u-desc { font-size: 12px; color: var(--muted); margin: 4px 0 8px; }
+.upgrade .u-meta { margin-left: auto; font-size: 11px; color: var(--accent-2); font-weight: 700; font-variant-numeric: tabular-nums; }
 .upgrade .u-cost {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--gold);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .upgrade.affordable .u-cost::before { content: "◈ "; }
-.upgrade:not(.affordable) .u-cost { color: var(--danger); }
+.upgrade:not(.affordable) .u-cost { color: var(--muted); }
+/* One-line description, ellipsised if it would ever overflow. */
+.upgrade .u-desc {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 3px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .shop-links {
   margin-top: 12px;

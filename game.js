@@ -30,7 +30,7 @@
     fragments: 0,
     level: 0,             // global level index; every board cleared bumps it
     universe: 1,          // universes finished (HUD "Meta"); advances on ascension
-    ballCounts: { 1: C.STARTING_BALLS }, // tier -> number of balls owned
+    ballCounts: { 1: 1 }, // tier -> number of balls owned
     ballsBought: 0,       // total tier-1 balls ever bought (prices the next one)
     powerLevel: 0,        // Power upgrades bought (global damage multiplier)
   });
@@ -58,8 +58,10 @@
 
     // Field -> screen transform (a centred square), computed on resize.
     view: { D: 1, offX: 0, offY: 0, scale: 1 },
-    fragTimestamps: [],
+    shardEvents: [],      // {t, amount} of recent breaks — smooths the shards/s HUD
   };
+
+  const RATE_WINDOW = 10;  // seconds over which shards/s is averaged (smooth HUD)
 
   // ---------------------------------------------------------------------------
   // Canvas setup
@@ -94,10 +96,13 @@
   }
 
   function makeBoard(level, universe) {
-    const cost = E.boardCost(level);
+    // HP is scaled by the universe's HP%, but the reward is always paid on the
+    // full nominal value — so a low-HP universe breaks faster without touching
+    // the reward curve.
+    const hpTotal = E.boardHp(level);
     const reward = E.boardReward(level);
 
-    // Random per-block weights (bottom-heavier) that still sum to the board cost,
+    // Random per-block weights (bottom-heavier) that still sum to the board HP,
     // so bricks start visibly varied but the total HP (the metric) is unchanged.
     const cells = [];
     for (let r = 0; r < LAY.rows(); r++) {
@@ -109,7 +114,7 @@
 
     const blocks = cells.map((cell) => {
       const share = cell.w / sum;
-      const hp = cost * share;
+      const hp = hpTotal * share;
       return { r: cell.r, c: cell.c, hp, maxHp: hp, reward: reward * share, hit: 0, alive: true };
     });
     const maxBlockHp = blocks.reduce((m, b) => Math.max(m, b.maxHp), 0) || 1;
@@ -216,7 +221,7 @@
   function breakBlock(block) {
     block.alive = false;
     state.fragments += block.reward;
-    runtime.fragTimestamps.push(performance.now());
+    runtime.shardEvents.push({ t: performance.now(), amount: block.reward });
 
     const rect = LAY.brickRect(block.r, block.c);
     spawnParticles(rect.x + rect.w / 2, rect.y + rect.h / 2, blockColor(runtime.board, block));
@@ -423,8 +428,8 @@
       f.life -= dt; f.y -= 65 * dt;
       if (f.life <= 0) runtime.floaters.splice(i, 1);
     }
-    const cutoff = performance.now() - 1000;
-    while (runtime.fragTimestamps.length && runtime.fragTimestamps[0] < cutoff) runtime.fragTimestamps.shift();
+    const cutoff = performance.now() - RATE_WINDOW * 1000;
+    while (runtime.shardEvents.length && runtime.shardEvents[0].t < cutoff) runtime.shardEvents.shift();
   }
 
   // ---------------------------------------------------------------------------
@@ -794,14 +799,19 @@
     updateHud();
   }
 
-  function shopCard(name, level, desc, costText, affordable, onClick) {
+  // A compact card: name + level/meta + cost all on one line, a one-line desc
+  // below. The whole card gets a gold border when you can afford it.
+  function shopCard(name, meta, desc, costText, affordable, onClick) {
     const btn = document.createElement("button");
     btn.className = "upgrade" + (affordable ? " affordable" : "");
     btn.disabled = !affordable;
     btn.innerHTML = `
-      <div class="u-head"><span class="u-name">${name}</span><span class="u-level">${level}</span></div>
+      <div class="u-line">
+        <span class="u-name">${name}</span>
+        <span class="u-meta">${meta}</span>
+        <span class="u-cost">${costText}</span>
+      </div>
       <div class="u-desc">${desc}</div>
-      <div class="u-cost">${costText}</div>
     `;
     btn.addEventListener("click", onClick);
     return btn;
@@ -813,17 +823,18 @@
     const count = ballCount1();
     const capped = count >= C.LEVEL1_CAP;
     const ballCost = E.ballCost(state.ballsBought);
+    const onSale = state.ballsBought < (C.BALL_SALE_COUNT || 0);
     const ball1dmg = E.ballDamage(1) * E.powerMultiplier(state.powerLevel);
     shopEl.appendChild(shopCard(
-      "Extra Ball", `${count} / ${C.LEVEL1_CAP}`,
-      `A tier-1 ball dealing ${E.formatNum(ball1dmg)} damage. Merge ten into a stronger one.`,
-      capped ? "Max " + C.LEVEL1_CAP + " — merge them" : E.formatNum(ballCost),
+      "Extra Ball", `${count}/${C.LEVEL1_CAP}`,
+      `Tier-1 ball · ${E.formatNum(ball1dmg)} dmg` + (onSale ? ` · ${Math.round(C.BALL_SALE_OFF * 100)}% off!` : ""),
+      capped ? "Max — merge" : E.formatNum(ballCost),
       !capped && state.fragments >= ballCost, buyBall));
 
     const pCost = E.powerCost(state.powerLevel);
     shopEl.appendChild(shopCard(
       "Power", `×${E.powerMultiplier(state.powerLevel).toFixed(2)}`,
-      `+${Math.round((C.POWER_MULT - 1) * 100)}% damage to every ball.`,
+      `+${Math.round((C.POWER_MULT - 1) * 100)}% damage to every ball`,
       E.formatNum(pCost),
       state.fragments >= pCost, buyPower));
   }
@@ -883,6 +894,7 @@
   const fpsEl = document.getElementById("fps");
   const boardEl = document.getElementById("board");
   const metaLabelEl = document.getElementById("metaLabel");
+  const brandTitleEl = document.querySelector(".brand h1");
   const appEl = document.getElementById("app");
 
   // How far through the current universe (its 24 sub-levels), 0..100%.
@@ -906,6 +918,7 @@
     fragEl.textContent = E.formatNum(state.fragments);
     if (boardEl) boardEl.textContent = eraProgress() + "%";
     if (metaLabelEl) metaLabelEl.textContent = E.universeName(state.universe) + " era";
+    if (brandTitleEl) brandTitleEl.textContent = E.universeName(state.universe) + " Era";
     applyTheme();
     refreshShop();
   }
@@ -1001,7 +1014,12 @@
     update(dt);
     render();
     hudTimer += dt;
-    if (hudTimer > 0.25) { hudTimer = 0; fpsEl.textContent = runtime.fragTimestamps.length; }
+    if (hudTimer > 0.25) {
+      hudTimer = 0;
+      let sum = 0;
+      for (const e of runtime.shardEvents) sum += e.amount;
+      fpsEl.textContent = E.formatNum(sum / RATE_WINDOW);
+    }
     requestAnimationFrame(frame);
   }
 

@@ -30,15 +30,29 @@ IC.economy = {
     return last * Math.pow(c.UNIVERSE_COST_MULT, u - (steps.length - 1));
   },
 
-  // Total HP of the board at global level L (split across its blocks by weight).
-  // Grows smoothly per level AND jumps per universe, so higher universes take
-  // progressively longer to clear.
+  // The nominal "value" of the board at level L — drives the reward and is the
+  // 100%-HP reference. Grows smoothly per level AND jumps per universe.
   boardCost(level) {
     const c = IC.config;
     return c.HP_BASE * Math.pow(c.COST_GROWTH, level) * IC.economy.universeFactor(IC.economy.universeOfLevel(level));
   },
 
-  // Shards awarded for clearing the whole board at level L (split across blocks).
+  // Per-universe brick-HP fraction (UNIVERSE_HP_PERCENT / 100). Only the HP is
+  // scaled by this — the reward is always paid on the full nominal value.
+  hpPercentFor(u) {
+    const arr = IC.config.UNIVERSE_HP_PERCENT || [100];
+    const pct = u < arr.length ? arr[u] : arr[arr.length - 1];
+    return pct / 100;
+  },
+
+  // Actual HP to destroy on the board at level L (nominal value × the universe's
+  // HP%). Lowering the % makes bricks break faster without changing the reward.
+  boardHp(level) {
+    return IC.economy.boardCost(level) * IC.economy.hpPercentFor(IC.economy.universeOfLevel(level));
+  },
+
+  // Shards awarded for clearing the whole board at level L — always on the full
+  // nominal value, independent of the HP%.
   boardReward(level) {
     return this.boardCost(level) * IC.config.REWARD_RATIO;
   },
@@ -75,10 +89,12 @@ IC.economy = {
     return c.POWER_BASE_COST * Math.pow(c.POWER_COST_GROWTH, n);
   },
 
-  // Price of the next level-1 ball, given how many you have ever bought.
+  // Price of the next level-1 ball, given how many you have ever bought. The first
+  // BALL_SALE_COUNT balls are discounted by BALL_SALE_OFF to soften the cold open.
   ballCost(bought) {
     const c = IC.config;
-    return c.BALL_BASE_COST * Math.pow(c.BALL_COST_GROWTH, bought);
+    const base = c.BALL_BASE_COST * Math.pow(c.BALL_COST_GROWTH, bought);
+    return bought < (c.BALL_SALE_COUNT || 0) ? base * (1 - (c.BALL_SALE_OFF || 0)) : base;
   },
 
   // Bonus shards for ascending to the next universe — scaled to your ball price,

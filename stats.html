@@ -102,7 +102,7 @@
     const MERGE_AT = C.SIM_MERGE_AT || C.MERGE_REQUIRED;
     function greedyLoadout(lmax) {
       let shards = 0, bought = 0, powerLevel = 0;
-      const balls = { 1: C.STARTING_BALLS };   // free starting balls
+      const balls = { 1: 1 };   // you start with one tier-1 ball
       const out = [];
       // Spend every shard, always buying the CHEAPER of {next ball, next Power
       // upgrade}, and merging along the way. Power is the exponential lever.
@@ -155,14 +155,14 @@
     // time (board out-HPs your DPS) — whichever is slower.
     function timeForLevel(L, load) {
       const hps = SIM ? SIM.hitsPerSecondPerBall : 30;
-      const cost = E.boardCost(L);
+      const hp = E.boardHp(L);   // actual HP to destroy (scaled by universe HP%)
       const geom = clearOneShot(load.N);
-      const dmgLimited = cost / (hps * Math.max(1e-9, load.dmg));
+      const dmgLimited = hp / (hps * Math.max(1e-9, load.dmg));
       const idle = Math.max(geom, dmgLimited);        // pure-idle clear time
       if (CLICKS <= 0) return idle;
       // Clicking is a second, parallel clearing path: you can tap each block
       // (geometry) but no faster than your click damage allows (damage).
-      const clickTime = Math.max(BLOCKS / CLICKS, cost / (CLICKS * E.ballDamage(1)));
+      const clickTime = Math.max(BLOCKS / CLICKS, hp / (CLICKS * E.ballDamage(1)));
       return 1 / (1 / idle + 1 / clickTime);
     }
 
@@ -170,7 +170,6 @@
     const KNOBS = [
       ["HP_BASE", "HP base", 10],
       ["COST_GROWTH", "Cost growth /level", 0.01],
-      ["STARTING_BALLS", "Free starting balls", 1],
       ["UNIVERSE_COST_MULT", "Universe × (5+)", 1],
       ["REWARD_RATIO", "Reward ratio", 0.05],
       ["ASCEND_BONUS_MULT", "Ascend bonus ×", 0.5],
@@ -180,6 +179,8 @@
       ["MERGE_DAMAGE_MULT", "Merge damage ×", 0.5],
       ["BALL_BASE_COST", "Ball base cost", 10],
       ["BALL_COST_GROWTH", "Ball cost growth", 0.01],
+      ["BALL_SALE_COUNT", "Balls on sale (count)", 1],
+      ["BALL_SALE_OFF", "Sale discount", 0.05],
     ];
 
     // A non-config knob: how many blocks per second you break by tapping. 0 =
@@ -200,6 +201,13 @@
       wrap.innerHTML = `<label>Universe ${u} difficulty</label><input type="number" step="10" value="${C.UNIVERSE_COST_STEPS[u - 1]}" data-step="${u - 1}">`;
       controlsEl.appendChild(wrap);
     });
+    // Per-universe brick HP % (universes 1…4) — HP only, reward stays at 100%.
+    [1, 2, 3, 4].forEach((u) => {
+      const wrap = document.createElement("div");
+      wrap.className = "ctrl";
+      wrap.innerHTML = `<label>Universe ${u} HP %</label><input type="number" step="5" value="${C.UNIVERSE_HP_PERCENT[u - 1]}" data-hp="${u - 1}">`;
+      controlsEl.appendChild(wrap);
+    });
 
     const clickWrap = document.createElement("div");
     clickWrap.className = "ctrl";
@@ -211,6 +219,7 @@
       if (!isFinite(v)) return;
       if (e.target.dataset.clicks) { CLICKS = Math.max(0, v); redraw(); return; }
       if (e.target.dataset.step) { C.UNIVERSE_COST_STEPS[+e.target.dataset.step] = v; redraw(); return; }
+      if (e.target.dataset.hp !== undefined && e.target.dataset.hp !== "") { C.UNIVERSE_HP_PERCENT[+e.target.dataset.hp] = v; redraw(); return; }
       const key = e.target.dataset.key;
       if (key) { C[key] = v; redraw(); }
     });
@@ -314,15 +323,15 @@
       const load = greedyLoadout(LMAX);   // loadout & ball power at each level
 
       // Chart 1: board cost vs reward vs ball power.
-      const cost = [], reward = [], power = [];
+      const hp = [], reward = [], power = [];
       for (let L = 0; L <= LMAX; L++) {
-        cost.push({ x: L, y: E.boardCost(L) });
+        hp.push({ x: L, y: E.boardHp(L) });
         reward.push({ x: L, y: E.boardReward(L) });
         power.push({ x: L, y: load[L].dmg });
       }
       drawChart(document.getElementById("chartCost"), [
-        { label: "Board cost (HP)", color: "#ff8fab", points: cost },
-        { label: "Board reward (shards)", color: "#56d3c9", points: reward },
+        { label: "Board HP (to break)", color: "#ff8fab", points: hp },
+        { label: "Board reward (shards, always 100%)", color: "#56d3c9", points: reward },
         { label: "Ball power (total dmg, greedy)", color: "#ffcf6b", points: power },
       ], { xMin: 0, xMax: LMAX, xLabel: "level (dashed = new universe)", height: 320, uniStep: BLOCKS });
 

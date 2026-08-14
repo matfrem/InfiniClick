@@ -37,8 +37,13 @@ IC.config = {
   REWARD_RATIO: 0.05,       // shards earned for clearing a whole board = ratio * cost
   ASCEND_BONUS_MULT: 8,     // universe-up bonus = this * the cost of your next ball
                             // (i.e. ≈ enough shards to buy this many more balls)
-  STARTING_BALLS: 5,        // free tier-1 balls at the start (softens the cold open —
-                            // brings universe 1 from ~17 min down to ~5 min)
+
+  // Per-universe brick HP, as a PERCENT of the nominal cost — and ONLY the HP: the
+  // reward is always paid on the full 100%. So dropping a universe to 20% makes its
+  // bricks break ~5× faster (great with manual clicks) without touching the reward
+  // curve. Default 100% for the opening universes; beyond the list it stays at the
+  // last value.
+  UNIVERSE_HP_PERCENT: [100, 100, 100, 100],
 
   // --- Balls -----------------------------------------------------------------
   // A tier-T ball deals DMG_BASE * (MERGE_REQUIRED * MERGE_DAMAGE_MULT) ^ (T-1).
@@ -62,6 +67,8 @@ IC.config = {
                             // so it never drops from 10 balls to 1 (a smoother curve)
   BALL_BASE_COST: 100,      // cost of your very first bought level-1 ball
   BALL_COST_GROWTH: 1.15,   // the next level-1 ball costs this^(total ever bought)
+  BALL_SALE_COUNT: 12,      // the first N balls are on sale (softens the cold open)
+  BALL_SALE_OFF: 0.9,       // 0.9 = 90% off those first N balls
   MAX_BALLS: 60,            // hard cap on simultaneous balls (performance)
   BALL_SPEED: 520,          // base ball speed in FIELD units/s (see layout.js)
 
