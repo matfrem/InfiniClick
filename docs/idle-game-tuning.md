@@ -90,6 +90,35 @@ charts them live. There is a single growth law, not a special per-universe rule.
 ball price straight from `economy.js`, and lets you drag the knobs before you commit
 them to `config.js`. Pecorella's worksheets (below) inspired the approach.
 
+## The clear-time model (two regimes) — and a physics gotcha
+
+A level's time is `max(geometry, damage)`:
+
+- **Geometry-limited** — when bricks die in a hit or two, the wall is *how fast the
+  balls physically reach every brick*. Measured directly by `simul.html`
+  (`clearSecondsByBallCount`) and dominates low-HP boards (e.g. a universe at 8% HP).
+- **Damage-limited** — when bricks out-HP your DPS, time is `boardHp / (rate · ball
+  power)`, where `rate = hitsPerSecondPerBall` is the **effective damaging-hit rate
+  per ball** on a *full* board.
+
+That `rate` used to be measured as "count every frame one ball overlaps a brick on a
+frozen full board" — which gave a wildly wrong **~40 hits/s** and made the time chart
+optimistic by ~100×. The reason it was wrong is a real property of the layout worth
+knowing when you tune HP: **the corridors between grid bricks are narrower than a
+ball's diameter** (gap ≈ 27 vs diameter ≈ 53 units). So a ball *cannot cross the
+grid*: it bounces off the outside face and is confined below it, only ever hitting the
+perimeter — a full high-HP board is a slow **perimeter grind** that peels inward as
+bricks fall, and manual clicks matter a lot. The frozen-board measurement instead
+trapped a ball *inside* a pocket where it registered a contact almost every frame.
+
+`simul.html` now measures `rate` the honest way: a genuine damage-limited clear (real
+brick HP, balls placed as in game) with `rate = totalHP / (clearTime · balls)`. It
+comes out around **0.4 hits/s per ball**, ~100× lower, and the time chart now matches
+what you actually experience. Consequence for tuning: a universe's **HP %**
+(`UNIVERSE_HP_PERCENT`) pushes it into the damage-limited regime *hard* — 350% HP is
+hours per universe, not minutes. Drag the HP-% sliders in `stats.html` and read the
+"Time per universe" row; it is now trustworthy.
+
 ## References
 
 - Anthony Pecorella, **The Math of Idle Games** — the canonical series:

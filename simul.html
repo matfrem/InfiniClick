@@ -73,7 +73,7 @@
     const L = window.IC.layout;
     const FIELD = L.FIELD;
     const DT = 1 / 60;
-    const HPS_RUNS = 15, CLEAR_RUNS = 30;
+    const HPS_RUNS = 10, CLEAR_RUNS = 30;
 
     document.getElementById("layoutNote").innerHTML =
       `Shared layout: <b>${L.cols()}×${L.rows()} = ${L.cols() * L.rows()} bricks</b> filling a ${FIELD}×${FIELD} square field, ball speed ${L.ballSpeed()} units/s. Each clear time is the mean of <b>${CLEAR_RUNS} runs</b>.`;
@@ -88,12 +88,28 @@
       }
       return balls;
     }
-    function makeBlocks() {
+    // Reposition balls the way game.js does at the start of a board — crucial for
+    // the damage-limited rate: the corridors between bricks are narrower than a
+    // ball, so a ball can't cross the grid, and where it starts (which side of the
+    // grid it's confined to) sets its hit rate for the whole board.
+    function placeBalls(balls, cx, cy, spread) {
+      const sp = L.ballSpeed();
+      for (const b of balls) {
+        const a = Math.random() * Math.PI * 2, rr = Math.random() * spread * 0.5;
+        b.x = Math.max(b.r, Math.min(cx + Math.cos(a) * rr, FIELD - b.r));
+        b.y = Math.max(b.r, Math.min(cy + Math.sin(a) * rr, FIELD - b.r));
+        const va = Math.random() * Math.PI * 2;
+        b.vx = Math.cos(va) * sp; b.vy = Math.sin(va) * sp;
+      }
+    }
+    function makeBlocks(hp = 1) {
       const b = [];
-      for (let r = 0; r < L.rows(); r++) for (let c = 0; c < L.cols(); c++) b.push({ r, c, alive: true });
+      for (let r = 0; r < L.rows(); r++) for (let c = 0; c < L.cols(); c++) b.push({ r, c, hp, alive: true });
       return b;
     }
-    function stepBall(ball, blocks, kill) {
+    // `dmg`: 'kill' one-shots a brick (geometry clears); a number subtracts HP
+    // (damage-limited clears). Returns the index of the brick touched, or -1.
+    function stepBall(ball, blocks, dmg) {
       ball.x += ball.vx * DT; ball.y += ball.vy * DT;
       if (ball.x - ball.r < 0) { ball.x = ball.r; ball.vx = Math.abs(ball.vx); }
       if (ball.x + ball.r > FIELD) { ball.x = FIELD - ball.r; ball.vx = -Math.abs(ball.vx); }
@@ -110,21 +126,41 @@
           const ox = ball.r - Math.abs(dx), oy = ball.r - Math.abs(dy);
           if (ox < oy) { ball.vx = -ball.vx; ball.x += ball.vx > 0 ? ox : -ox; }
           else { ball.vy = -ball.vy; ball.y += ball.vy > 0 ? oy : -oy; }
-          if (kill) bl.alive = false;
+          if (dmg === 'kill') bl.alive = false;
+          else { bl.hp -= dmg; if (bl.hp < 0.05) bl.alive = false; }
           return i;
         }
       }
       return -1;
     }
-    function measureHitsPerSecond(seconds, trials) {
-      let total = 0;
+    // The EFFECTIVE damaging-hit rate per ball, in the damage-limited regime.
+    //
+    // The old approach (count every frame a single ball overlaps a brick on a
+    // frozen, permanently-full board) was wildly wrong: the corridors between
+    // bricks are narrower than a ball's diameter, so a ball started inside the
+    // grid gets trapped and registers a "hit" almost every frame (~40/s) — nothing
+    // like real play. Instead we run a genuine damage-limited clear (bricks with
+    // real HP) and derive rate = totalHP / (clearTime · ballCount · dmg). This is
+    // what the time model needs: DPS = rate · (total ball power).
+    function measureEffectiveHitsPerSecond(trials) {
+      // High per-brick HP so the board stays FULL almost the whole clear — that is
+      // the regime high-HP universes actually live in (once bricks start breaking
+      // the grid opens up and the rate climbs, but that's a vanishing fraction).
+      // Balls placed as in game.js so they end up confined below the grid, as they
+      // do in play. rate = totalHP / (clearTime · ballCount · dmg).
+      const N = 8, hpPer = 333, dmg = 1, maxSteps = Math.round(4000 / DT);
+      let sum = 0, ok = 0;
       for (let t = 0; t < trials; t++) {
-        const blocks = makeBlocks(), [ball] = makeBalls(1);
-        let hits = 0; const steps = Math.round(seconds / DT);
-        for (let s = 0; s < steps; s++) if (stepBall(ball, blocks, false) >= 0) hits++;
-        total += hits / seconds;
+        const blocks = makeBlocks(hpPer), balls = makeBalls(N);
+        placeBalls(balls, FIELD / 2, FIELD * 0.5, FIELD * 0.3);
+        let remaining = blocks.length, steps = 0;
+        while (remaining > 0 && steps < maxSteps) {
+          for (const ball of balls) { const h = stepBall(ball, blocks, dmg); if (h >= 0 && !blocks[h].alive) remaining--; }
+          steps++;
+        }
+        if (remaining === 0) { sum += (hpPer * blocks.length) / ((steps * DT) * N * dmg); ok++; }
       }
-      return total / trials;
+      return ok ? sum / ok : 0;
     }
     function measureClearTime(n, trials, maxSeconds) {
       let total = 0; const maxSteps = Math.round(maxSeconds / DT);
@@ -132,7 +168,7 @@
         const blocks = makeBlocks(), balls = makeBalls(n);
         let remaining = blocks.length, steps = 0;
         while (remaining > 0 && steps < maxSteps) {
-          for (const ball of balls) if (stepBall(ball, blocks, true) >= 0) remaining--;
+          for (const ball of balls) if (stepBall(ball, blocks, 'kill') >= 0) remaining--;
           steps++;
         }
         total += steps * DT;
@@ -143,14 +179,14 @@
     // ---- run the measurement ------------------------------------------------
     function run() {
       const NMAX = 20;
-      const hps1 = measureHitsPerSecond(20, HPS_RUNS);
+      const hps1 = measureEffectiveHitsPerSecond(HPS_RUNS);
       const clear = {};
       for (let n = 1; n <= NMAX; n++) clear[n] = measureClearTime(n, CLEAR_RUNS, 300);
 
-      const rows = ["<tr><th>Balls</th><th style='text-align:right'>Clear time (s)</th><th style='text-align:right'>Hits/s total</th></tr>"];
-      for (let n = 1; n <= NMAX; n++) rows.push(`<tr><td>${n}</td><td class="num">${clear[n].toFixed(2)}</td><td class="num">${(hps1 * n).toFixed(1)}</td></tr>`);
+      const rows = ["<tr><th>Balls</th><th style='text-align:right'>Clear time (s)</th><th style='text-align:right'>Dmg hits/s total</th></tr>"];
+      for (let n = 1; n <= NMAX; n++) rows.push(`<tr><td>${n}</td><td class="num">${clear[n].toFixed(2)}</td><td class="num">${(hps1 * n).toFixed(2)}</td></tr>`);
       document.getElementById("results").innerHTML = rows.join("");
-      document.getElementById("hps").innerHTML = `One ball lands <b>${hps1.toFixed(2)} hits/s</b> on a full board. Balls do not collide with each other, so N balls land ≈ N× that.`;
+      document.getElementById("hps").innerHTML = `Each ball lands <b>${hps1.toFixed(2)} damaging hits/s</b> on a full high-HP board (a genuine damage-limited clear, not per-frame overlaps). Balls don't collide, so N balls land ≈ N× that — this is the rate the time model turns ball power into DPS.`;
       document.getElementById("status").textContent = "done";
 
       const sim = {
@@ -163,9 +199,12 @@
 `/*
  * InfiniClick — simulated layout ratios (generated by simul.html).
  *
- * Purely geometric measurements of the shared normalised layout: how fast balls
- * physically sweep a board clean. Re-generate whenever the grid or physics
- * changes. Consumed by stats.html to turn the economy into a time-per-level.
+ * Two measured constants of the shared layout, both from the real ball/brick
+ * physics: clearSecondsByBallCount (how fast N balls sweep a one-shot board — the
+ * geometry-limited floor) and hitsPerSecondPerBall (the EFFECTIVE damaging-hit
+ * rate per ball on a full high-HP board — the damage-limited rate, which DPS =
+ * rate · ball-power feeds). Re-generate whenever the grid or physics changes.
+ * Consumed by stats.html to turn the economy into a time-per-level.
  */
 window.IC = window.IC || {};
 IC.sim = ${JSON.stringify(sim, null, 2)};
@@ -197,7 +236,7 @@ IC.sim = ${JSON.stringify(sim, null, 2)};
         vctx.fillStyle = "#2a3a4d";
         vctx.fillRect(rect.x, rect.y, rect.w, rect.h);
       }
-      for (const ball of vballs) stepBall(ball, vblocks, true);
+      for (const ball of vballs) stepBall(ball, vblocks, 'kill');
       vctx.fillStyle = "#56d3c9";
       for (const ball of vballs) { vctx.beginPath(); vctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2); vctx.fill(); }
       vctx.restore();
