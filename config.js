@@ -24,18 +24,21 @@ IC.config = {
   // one universe to the next is COST_GROWTH ^ blocksPerBoard. The old hard-coded
   // "x10 per universe" now emerges from the growth law instead of being fixed —
   // e.g. 1.1 ^ 24 ≈ 9.85, roughly ten.
-  HP_BASE: 200,
+  HP_BASE: 150,
   COST_GROWTH: 1.1,
-  // On top of the smooth per-level growth (COST_GROWTH^24 ≈ 10× per universe), each
-  // universe multiplies board HP by this again. Your ball power grows only
-  // ~logarithmically with income (ball prices inflate) while cost grows with it, so
-  // a factor > 1 makes each universe take steadily LONGER than the last. The ramp
-  // only bites once you stop one-shotting bricks (early universes stay fast because
-  // they are geometry-limited); tune it live in stats.html.
-  UNIVERSE_COST_MULT: 2,
-  REWARD_RATIO: 0.6,        // shards earned for clearing a whole board = ratio * cost
+  // Per-universe difficulty. The first few universes are HAND-TUNED here (absolute
+  // multiplier of board HP for universe 1, 2, 3, …) to shape the opening ramp;
+  // beyond the list each further universe multiplies by UNIVERSE_COST_MULT. Board
+  // cost = HP_BASE * COST_GROWTH^level * (this universe's factor). Ball power grows
+  // only ~logarithmically with income while cost grows with it, so factors > 1 make
+  // universes take steadily longer. Tune live in stats.html.
+  UNIVERSE_COST_STEPS: [1, 50, 2500, 125000],
+  UNIVERSE_COST_MULT: 50,   // multiplier per universe beyond the hand-tuned list
+  REWARD_RATIO: 0.05,       // shards earned for clearing a whole board = ratio * cost
   ASCEND_BONUS_MULT: 8,     // universe-up bonus = this * the cost of your next ball
                             // (i.e. ≈ enough shards to buy this many more balls)
+  STARTING_BALLS: 5,        // free tier-1 balls at the start (softens the cold open —
+                            // brings universe 1 from ~17 min down to ~5 min)
 
   // --- Balls -----------------------------------------------------------------
   // A tier-T ball deals DMG_BASE * (MERGE_REQUIRED * MERGE_DAMAGE_MULT) ^ (T-1).
@@ -47,18 +50,18 @@ IC.config = {
   // exponential board cost (the way an idle economy must). Without it, balls-only
   // power is only polynomial and the cost line runs away. Tune against the cost
   // curve in stats.html so "ball power" tracks it.
-  POWER_MULT: 1.08,         // damage ×multiplier per Power upgrade bought
+  POWER_MULT: 1.2,          // damage ×multiplier per Power upgrade bought
   POWER_BASE_COST: 50,
   POWER_COST_GROWTH: 1.3,
 
-  DMG_BASE: 10,
+  DMG_BASE: 1,
   MERGE_REQUIRED: 10,       // balls consumed by one merge (10 -> 1 of the next tier)
   MERGE_DAMAGE_MULT: 2,     // a merged ball is worth this * the balls it consumed
   LEVEL1_CAP: 20,           // max tier-1 balls you may hold (merge is optional from 10)
   SIM_MERGE_AT: 15,         // the stats greedy model merges once a tier reaches this,
                             // so it never drops from 10 balls to 1 (a smoother curve)
   BALL_BASE_COST: 100,      // cost of your very first bought level-1 ball
-  BALL_COST_GROWTH: 1.12,   // the next level-1 ball costs this^(total ever bought)
+  BALL_COST_GROWTH: 1.15,   // the next level-1 ball costs this^(total ever bought)
   MAX_BALLS: 60,            // hard cap on simultaneous balls (performance)
   BALL_SPEED: 520,          // base ball speed in FIELD units/s (see layout.js)
 

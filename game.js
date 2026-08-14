@@ -30,7 +30,7 @@
     fragments: 0,
     level: 0,             // global level index; every board cleared bumps it
     universe: 1,          // universes finished (HUD "Meta"); advances on ascension
-    ballCounts: { 1: 1 }, // tier -> number of balls owned
+    ballCounts: { 1: C.STARTING_BALLS }, // tier -> number of balls owned
     ballsBought: 0,       // total tier-1 balls ever bought (prices the next one)
     powerLevel: 0,        // Power upgrades bought (global damage multiplier)
   });

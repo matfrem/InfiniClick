@@ -20,13 +20,22 @@ IC.economy = {
     return Math.floor(level / IC.economy.blocksPerBoard());
   },
 
+  // The absolute difficulty factor for universe `u` (0-indexed): the hand-tuned
+  // step for the opening universes, then UNIVERSE_COST_MULT compounding beyond.
+  universeFactor(u) {
+    const c = IC.config;
+    const steps = c.UNIVERSE_COST_STEPS || [1];
+    if (u < steps.length) return steps[u];
+    const last = steps[steps.length - 1];
+    return last * Math.pow(c.UNIVERSE_COST_MULT, u - (steps.length - 1));
+  },
+
   // Total HP of the board at global level L (split across its blocks by weight).
-  // Grows smoothly per level AND jumps by UNIVERSE_COST_MULT each universe, so
-  // higher universes take progressively longer to clear.
+  // Grows smoothly per level AND jumps per universe, so higher universes take
+  // progressively longer to clear.
   boardCost(level) {
     const c = IC.config;
-    const u = IC.economy.universeOfLevel(level);
-    return c.HP_BASE * Math.pow(c.COST_GROWTH, level) * Math.pow(c.UNIVERSE_COST_MULT, u);
+    return c.HP_BASE * Math.pow(c.COST_GROWTH, level) * IC.economy.universeFactor(IC.economy.universeOfLevel(level));
   },
 
   // Shards awarded for clearing the whole board at level L (split across blocks).

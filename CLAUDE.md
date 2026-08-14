@@ -58,12 +58,15 @@ shape* of the blocks — you can change the grid freely without touching the bal
 
 There is **no hard-coded "×10 per universe"** any more. The grid is a **fixed
 `GRID_COLS × GRID_ROWS` (6×4 = 24 blocks) on every device** — the mobile layout —
-so a universe always spans exactly 24 levels. Its difficulty multiplier vs the one
-below is `COST_GROWTH^24 ≈ 9.85` (near ×10) **times `UNIVERSE_COST_MULT`** — an extra
-per-universe jump on `boardCost`. Because ball power grows only ~logarithmically with
-income (ball prices inflate) while cost grows with it, that factor makes each universe
-take progressively **longer** than the last instead of levelling off. `universeCost` /
-`universeMultiplier` in `economy.js` derive it. The HUD stat reads the current
+so a universe always spans exactly 24 levels. On top of the smooth `COST_GROWTH^24`
+(≈9.85, near ×10) per universe, each universe's `boardCost` is multiplied by an
+explicit **per-universe difficulty factor**: the first few are hand-tuned in
+`UNIVERSE_COST_STEPS` (to shape the opening ramp), then each further universe
+multiplies by `UNIVERSE_COST_MULT`. Because ball power grows only ~logarithmically
+with income (ball prices inflate) while cost grows with it, these factors make each
+universe take progressively **longer** than the last. `economy.universeFactor(u)`
+computes it. `STARTING_BALLS` free balls soften the cold open (universe 1 from
+~17 min to ~5 min). The HUD stat reads the current
 **era** — the universe's name and how far through it you are (e.g. `28%` under
 `QUARK ERA`); it advances only on **ascension**, which grants a bonus (`ascendBonus`,
 scaled to your ball price so it always buys ~`ASCEND_BONUS_MULT` more balls) and shows
@@ -173,7 +176,8 @@ line). Tune `POWER_MULT` / `POWER_COST_GROWTH` so power tracks cost; then
 ## Quick customization
 
 - **Everything balance-related**: `config.js`. Board HP curve (`HP_BASE`,
-  `COST_GROWTH`, `UNIVERSE_COST_MULT`), reward (`REWARD_RATIO`), ascension bonus
+  `COST_GROWTH`, `UNIVERSE_COST_STEPS`, `UNIVERSE_COST_MULT`), free start
+  (`STARTING_BALLS`), reward (`REWARD_RATIO`), ascension bonus
   (`ASCEND_BONUS_MULT`), the Power upgrade (`POWER_MULT`, `POWER_BASE_COST`,
   `POWER_COST_GROWTH`), ball
   damage/merge (`DMG_BASE`, `MERGE_REQUIRED`, `MERGE_DAMAGE_MULT`, `SIM_MERGE_AT`), ball

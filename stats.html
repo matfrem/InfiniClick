@@ -102,7 +102,7 @@
     const MERGE_AT = C.SIM_MERGE_AT || C.MERGE_REQUIRED;
     function greedyLoadout(lmax) {
       let shards = 0, bought = 0, powerLevel = 0;
-      const balls = { 1: 1 };   // the one free starting ball
+      const balls = { 1: C.STARTING_BALLS };   // free starting balls
       const out = [];
       // Spend every shard, always buying the CHEAPER of {next ball, next Power
       // upgrade}, and merging along the way. Power is the exponential lever.
@@ -170,7 +170,8 @@
     const KNOBS = [
       ["HP_BASE", "HP base", 10],
       ["COST_GROWTH", "Cost growth /level", 0.01],
-      ["UNIVERSE_COST_MULT", "Universe difficulty ×", 0.5],
+      ["STARTING_BALLS", "Free starting balls", 1],
+      ["UNIVERSE_COST_MULT", "Universe × (5+)", 1],
       ["REWARD_RATIO", "Reward ratio", 0.05],
       ["ASCEND_BONUS_MULT", "Ascend bonus ×", 0.5],
       ["POWER_MULT", "Power upgrade ×", 0.01],
@@ -192,6 +193,14 @@
       wrap.innerHTML = `<label>${label}</label><input type="number" step="${step}" value="${C[key]}" data-key="${key}">`;
       controlsEl.appendChild(wrap);
     }
+    // Per-universe difficulty steps (universes 2, 3, 4) write into the array.
+    [2, 3, 4].forEach((u) => {
+      const wrap = document.createElement("div");
+      wrap.className = "ctrl";
+      wrap.innerHTML = `<label>Universe ${u} difficulty</label><input type="number" step="10" value="${C.UNIVERSE_COST_STEPS[u - 1]}" data-step="${u - 1}">`;
+      controlsEl.appendChild(wrap);
+    });
+
     const clickWrap = document.createElement("div");
     clickWrap.className = "ctrl";
     clickWrap.innerHTML = `<label>Your clicks / sec</label><input type="number" step="1" value="0" data-clicks="1">`;
@@ -201,6 +210,7 @@
       const v = parseFloat(e.target.value);
       if (!isFinite(v)) return;
       if (e.target.dataset.clicks) { CLICKS = Math.max(0, v); redraw(); return; }
+      if (e.target.dataset.step) { C.UNIVERSE_COST_STEPS[+e.target.dataset.step] = v; redraw(); return; }
       const key = e.target.dataset.key;
       if (key) { C[key] = v; redraw(); }
     });
