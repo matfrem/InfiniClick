@@ -89,6 +89,12 @@ IC.economy = {
     return c.POWER_BASE_COST * Math.pow(c.POWER_COST_GROWTH, n);
   },
 
+  // Cost of the next Click Power upgrade — its own cheaper base, same growth.
+  clickPowerCost(n) {
+    const c = IC.config;
+    return c.CLICK_POWER_BASE_COST * Math.pow(c.POWER_COST_GROWTH, n);
+  },
+
   // Price of the next level-1 ball, given how many you have ever bought. The first
   // BALL_SALE_COUNT balls are discounted by BALL_SALE_OFF to soften the cold open.
   ballCost(bought) {

@@ -92,8 +92,7 @@
   // the fractal bookkeeping live here.
   // ---------------------------------------------------------------------------
   function cellRectOf(board, index) {
-    const b = board.blocks[index];
-    return LAY.brickRect(b.r, b.c);
+    return board.blocks[index].rect;
   }
 
   function makeBoard(level, universe) {
@@ -103,20 +102,18 @@
     const hpTotal = E.boardHp(level);
     const reward = E.boardReward(level);
 
-    // Random per-block weights (bottom-heavier) that still sum to the board HP,
+    // Brick positions come from this universe's LAYOUT (grid / staggered / ring /
+    // pyramid) — every layout has the same 24 blocks so the metrics don't move.
+    // Random per-block weights (lower bricks heavier) still sum to the board HP,
     // so bricks start visibly varied but the total HP (the metric) is unchanged.
-    const cells = [];
-    for (let r = 0; r < LAY.rows(); r++) {
-      for (let c = 0; c < LAY.cols(); c++) {
-        cells.push({ r, c, w: 0.55 + r * 0.12 + Math.random() * 0.9 });
-      }
-    }
+    const rects = LAY.cells(LAY.layoutForUniverse(universe));
+    const cells = rects.map((rect) => ({ rect, w: 0.55 + (rect.y / FIELD) * 0.5 + Math.random() * 0.9 }));
     const sum = cells.reduce((a, b) => a + b.w, 0) || 1;
 
     const blocks = cells.map((cell) => {
       const share = cell.w / sum;
       const hp = hpTotal * share;
-      return { r: cell.r, c: cell.c, hp, maxHp: hp, reward: reward * share, hit: 0, label: 0, alive: true };
+      return { rect: cell.rect, hp, maxHp: hp, reward: reward * share, hit: 0, label: 0, alive: true };
     });
     const maxBlockHp = blocks.reduce((m, b) => Math.max(m, b.maxHp), 0) || 1;
     return { blocks, portalIndex: null, universe, maxBlockHp };
@@ -142,7 +139,10 @@
 
   function ensureBoards(force) {
     if (!force && runtime.board) return;
-    runtime.parent = makeBoard(state.level, state.universe);
+    // The meta-board (what you zoom OUT to) teases the universe ABOVE: its own
+    // palette and layout (universe + 1). The board you actually play is the
+    // current universe.
+    runtime.parent = makeBoard(state.level, state.universe + 1);
     runtime.parent.portalIndex = pickPortal(runtime.parent);
     runtime.board = makeBoard(state.level, state.universe);
     runtime.phase = "play";
@@ -211,7 +211,9 @@
 
   function mergeBalls(tier) {
     const count = state.ballCounts[tier] || 0;
-    if (count < C.MERGE_REQUIRED) return;
+    // Merging is only unlocked once you hold MERGE_UNLOCK (15), but a merge still
+    // consumes only MERGE_REQUIRED (10) — so you never collapse from 10 down to 1.
+    if (count < C.MERGE_UNLOCK) return;
     state.ballCounts[tier] = count - C.MERGE_REQUIRED;
     if (state.ballCounts[tier] === 0) delete state.ballCounts[tier];
     state.ballCounts[tier + 1] = (state.ballCounts[tier + 1] || 0) + 1;
@@ -230,7 +232,7 @@
     state.fragments += block.reward;
     runtime.shardEvents.push({ t: performance.now(), amount: block.reward });
 
-    const rect = LAY.brickRect(block.r, block.c);
+    const rect = block.rect;
     spawnParticles(rect.x + rect.w / 2, rect.y + rect.h / 2, blockColor(runtime.board, block));
     runtime.floaters.push({
       x: rect.x + rect.w / 2, y: rect.y + rect.h / 2,
@@ -299,7 +301,8 @@
     state.fragments += bonus;
     state.universe += 1;
 
-    const meta = makeBoard(state.level, state.universe);
+    // The new meta-board again teases one universe further up.
+    const meta = makeBoard(state.level, state.universe + 1);
     const portal = pickPortal(meta);
     meta.blocks[portal].alive = false;
     runtime.pending = { meta, portal };
@@ -347,7 +350,7 @@
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
       if (!block.alive) continue;
-      const rect = LAY.brickRect(block.r, block.c);
+      const rect = block.rect;
       const nearestX = clamp(ball.x, rect.x, rect.x + rect.w);
       const nearestY = clamp(ball.y, rect.y, rect.y + rect.h);
       const dx = ball.x - nearestX;
@@ -509,7 +512,7 @@
     const pulse = portalHint ? 0.5 + 0.5 * Math.sin(performance.now() / 260) : 0;
     for (const block of board.blocks) {
       if (!block.alive) continue;
-      const rect = LAY.brickRect(block.r, block.c);
+      const rect = block.rect;
       const hpRatio = block.hp / block.maxHp;
       const r = Math.min(16, rect.w * 0.18);
       const col = blockColor(board, block);
@@ -745,7 +748,7 @@
     for (let i = 0; i < runtime.board.blocks.length; i++) {
       const block = runtime.board.blocks[i];
       if (!block.alive) continue;
-      const b = LAY.brickRect(block.r, block.c);
+      const b = block.rect;
       if (pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h) {
         if (runtime.phase === "play") damageBlock(block, clickDamage(), pt.x, pt.y);
         else startZoomIn(i);
@@ -816,7 +819,7 @@
 
   function buyClickPower() {
     if (state.clickLevel >= C.CLICK_POWER_CAP) return;
-    const cost = E.powerCost(state.clickLevel);
+    const cost = E.clickPowerCost(state.clickLevel);
     if (state.fragments < cost) return;
     state.fragments -= cost;
     state.clickLevel += 1;
@@ -865,7 +868,7 @@
       state.fragments >= pCost, buyPower));
 
     const cCapped = state.clickLevel >= C.CLICK_POWER_CAP;
-    const cCost = E.powerCost(state.clickLevel);
+    const cCost = E.clickPowerCost(state.clickLevel);
     shopEl.appendChild(shopCard(
       "Click Power", cCapped ? `×${E.powerMultiplier(state.clickLevel).toFixed(2)} max` : `${state.clickLevel}/${C.CLICK_POWER_CAP}`,
       `+${Math.round((C.POWER_MULT - 1) * 100)}% damage when you tap a brick`,
@@ -883,7 +886,7 @@
     const pAff = state.fragments >= E.powerCost(state.powerLevel);
     cards[1].disabled = !pAff;
     cards[1].classList.toggle("affordable", pAff);
-    const cAff = state.clickLevel < C.CLICK_POWER_CAP && state.fragments >= E.powerCost(state.clickLevel);
+    const cAff = state.clickLevel < C.CLICK_POWER_CAP && state.fragments >= E.clickPowerCost(state.clickLevel);
     cards[2].disabled = !cAff;
     cards[2].classList.toggle("affordable", cAff);
   }
@@ -913,7 +916,7 @@
         <span class="ct">×${count}</span>
         <span class="dmg">${E.formatNum(dmg)} dmg</span>
       `;
-      if (count >= C.MERGE_REQUIRED) {
+      if (count >= C.MERGE_UNLOCK) {
         const btn = document.createElement("button");
         btn.className = "merge";
         btn.textContent = `Merge 10 → Lv ${tier + 1}`;

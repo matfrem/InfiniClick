@@ -60,9 +60,12 @@ IC.config = {
   POWER_BASE_COST: 50,
   POWER_COST_GROWTH: 1.3,
   CLICK_POWER_CAP: 10,      // max Click Power upgrades (reuses POWER_MULT / growth)
+  CLICK_POWER_BASE_COST: 10, // cost of the first Click Power (then POWER_COST_GROWTH)
 
   DMG_BASE: 1,
   MERGE_REQUIRED: 10,       // balls consumed by one merge (10 -> 1 of the next tier)
+  MERGE_UNLOCK: 15,         // you may only merge once you hold at least this many,
+                            // so a merge never drops you from a bare 10 down to 1
   MERGE_DAMAGE_MULT: 3,     // a merged ball is worth this * the balls it consumed
   LEVEL1_CAP: 20,           // max tier-1 balls you may hold (merge is optional from 10)
   SIM_MERGE_AT: 15,         // the stats greedy model merges once a tier reaches this,
@@ -76,7 +79,7 @@ IC.config = {
 
   // --- Feel ------------------------------------------------------------------
   ZOOM_DUR: 0.55,           // seconds a zoom transition lasts
-  HUNT_GRACE: 2.5,          // seconds balls roam a meta-board before diving in
+  HUNT_GRACE: 1,            // seconds balls roam a meta-board before diving in
   ASCEND_DUR: 5,            // seconds the "upper universe" interlude lasts
 
   // --- Grid ------------------------------------------------------------------

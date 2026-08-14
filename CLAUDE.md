@@ -33,7 +33,9 @@ moment there are just two "notches" in play — never a growing stack. When a wh
 meta-board is finished, the next universe is generated on the spot (a fresh, tougher
 board with one block pre-destroyed), so the climb upward is endless but memory is
 constant. The meta phase uses the exact same board, blocks, balls and rendering as
-the normal phase — it *is* the same game, only zoomed.
+the normal phase — it *is* the same game, only zoomed — but the meta-board is themed
+as the **universe above** (its palette and layout), a tease of what you are climbing
+into.
 
 ## One economy, two shared files
 
@@ -95,8 +97,9 @@ ratios live; `docs/idle-game-tuning.md` explains the math.
 ## Balls & tiers
 
 Balls come in **tiers**. Buying an **Extra Ball** always adds a **tier-1** ball — the
-only ones you can buy — and you may hold up to **`LEVEL1_CAP` (20)**; merging is
-available from ten but never forced until the cap, so the count never collapses 10→1.
+only ones you can buy — and you may hold up to **`LEVEL1_CAP` (20)**. Merging only
+**unlocks at `MERGE_UNLOCK` (15)** even though a merge still consumes only ten, so it
+never collapses you from a bare ten down to one (which felt punishing).
 Ten balls of a tier **merge** (button in the ball banner) into one of the next tier.
 (The stats model assumes you merge at `SIM_MERGE_AT` = 15, i.e. 15→6, for a smoother
 curve.) Damage rises steeply per tier,
@@ -128,7 +131,7 @@ python3 -m http.server 8000
 | `style.css`  | Dark "zen" theme, layout and shop styling.                        |
 | `config.js`  | Every tunable knob (`IC.config`) — the one place to rebalance.     |
 | `economy.js` | Pure formulas (`IC.economy`) shared by the game and the stats page.|
-| `layout.js`  | Shared brick geometry (`IC.layout`) in a normalised square field.  |
+| `layout.js`  | Shared brick geometry (`IC.layout`): per-universe board **layouts** in a normalised square field. |
 | `game.js`    | The game itself: physics, rendering, the fractal state machine, saving. |
 | `simul.html` | Physics simulator: measures how fast N balls clear the current layout. |
 | `stats.js`   | Baked output of `simul.html` (`IC.sim`) — the measured layout ratios. |
@@ -144,11 +147,20 @@ reads them as `C`, `E`, `LAY`. `stats.html` loads config + economy (+ `stats.js`
 `simul.html` loads config + economy + layout.
 
 **Coordinates.** Bricks and balls live in `layout.js`'s **normalised square field**
-(`FIELD × FIELD` units): the grid uses the full width at the top, the balls bounce in
-the whole square. All physics runs in field units, so it is identical on every device
-and matches the simulator exactly. The game keeps a `view` transform (a centred square
-scaled to the canvas) and draws everything through it; the fractal zoom is a camera
-*inside* the field. Screen taps are mapped back to field units (`toField`).
+(`FIELD × FIELD` units); the balls bounce in the whole square. All physics runs in
+field units, so it is identical on every device and matches the simulator exactly. The
+game keeps a `view` transform (a centred square scaled to the canvas) and draws
+everything through it; the fractal zoom is a camera *inside* the field. Screen taps are
+mapped back to field units (`toField`).
+
+**Layouts.** `layout.js` holds several board **layouts** (`grid`, `staggered`, `ring`,
+`pyramid`), one per universe via `layoutForUniverse(u)` (cycling, like palettes).
+`cells(i)` returns that layout's brick rects; every layout keeps the **same 24 blocks**
+so `blocksPerBoard`, the economy and the clear-time metrics stay put — only the shape
+and brick sizes change, and each brick carries its own `rect`. The **meta-board teases
+the universe above**: `ensureBoards`/`startAscension` build the parent with
+`state.universe + 1`, so zooming out shows the next universe's palette *and* layout. The
+simulator/`stats.js` still measure only the grid (see `todo.md`).
 
 `game.js` lives inside an IIFE (no globals of its own) and is split into sections:
 
@@ -169,7 +181,8 @@ scaled to the canvas) and draws everything through it; the fractal zoom is a cam
 Three purchases: **Extra Ball** (a tier-1 ball, capped at twenty), **Power**, a
 global multiplicative damage upgrade (`×POWER_MULT` per buy, geometric cost), and
 **Click Power**, the same multiplier applied to manual taps but **capped at
-`CLICK_POWER_CAP` (10)** buys (it reuses `POWER_MULT` / `POWER_COST_GROWTH`). Plus
+`CLICK_POWER_CAP` (10)** buys (it reuses `POWER_MULT` and `POWER_COST_GROWTH`, with
+its own cheaper `CLICK_POWER_BASE_COST`). Plus
 **merging** ten balls of a tier into one of the next.
 
 **Power is the exponential lever, and it is not optional maths.** Board cost grows
@@ -187,11 +200,14 @@ line). Tune `POWER_MULT` / `POWER_COST_GROWTH` so power tracks cost; then
   `COST_GROWTH`, `UNIVERSE_COST_STEPS`, `UNIVERSE_COST_MULT`), per-universe brick-HP %
   (`UNIVERSE_HP_PERCENT`, HP-only, reward untouched), reward (`REWARD_RATIO`), ascension
   bonus (`ASCEND_BONUS_MULT`), the Power upgrade (`POWER_MULT`, `POWER_BASE_COST`,
-  `POWER_COST_GROWTH`), ball
-  damage/merge (`DMG_BASE`, `MERGE_REQUIRED`, `MERGE_DAMAGE_MULT`, `SIM_MERGE_AT`), ball
+  `POWER_COST_GROWTH`), the Click-Power upgrade (`CLICK_POWER_CAP`,
+  `CLICK_POWER_BASE_COST`), ball
+  damage/merge (`DMG_BASE`, `MERGE_REQUIRED`, `MERGE_UNLOCK`, `MERGE_DAMAGE_MULT`,
+  `SIM_MERGE_AT`), ball
   price (`BALL_BASE_COST`, `BALL_COST_GROWTH`), ball sale (`BALL_SALE_COUNT`,
   `BALL_SALE_OFF`), cap (`LEVEL1_CAP`), feel (`ZOOM_DUR`,
-  `HUNT_GRACE`, `ASCEND_DUR`), grid (`GRID_COLS`, `GRID_ROWS`), ball speed
+  `HUNT_GRACE`, `ASCEND_DUR`), grid (`GRID_COLS`, `GRID_ROWS`) and board **layouts**
+  (`layout.js`'s `LAYOUTS` / `layoutForUniverse`), ball speed
   (`BALL_SPEED`, in field units), palettes/backgrounds (`PALETTES`, `BACKGROUNDS`),
   universe names (`UNIVERSE_NAMES`). Open `stats.html` to see the effect of any change
   on the cost/reward curves before committing it.
