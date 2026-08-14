@@ -183,6 +183,7 @@ html, body {
 }
 .ballchip .lv { font-weight: 700; }
 .ballchip .ct { color: var(--muted); font-variant-numeric: tabular-nums; }
+.ballchip .dmg { color: var(--gold); font-variant-numeric: tabular-nums; font-size: 12px; }
 .ballchip .merge {
   margin-left: auto;
   font: inherit;

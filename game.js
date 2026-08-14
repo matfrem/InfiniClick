@@ -8,38 +8,30 @@
  * next block, and clear the board waiting there. Finish a whole meta-board and
  * you ascend to the next universe.
  *
- * Difficulty is one smooth exponential in a global level index: each board costs
- * `HP_BASE * COST_GROWTH^level` in HP, split across its blocks by weight — so the
- * number or shape of the blocks can change freely without moving the metrics.
- * All those knobs live in config.js; the formulas live in economy.js. Both are
- * shared with the stats dashboard (stats.html).
- *
- * Only two boards are ever loaded at once — the one you play and its parent — so
- * the infinite stack costs nothing to keep alive.
+ * The balls bounce inside a NORMALISED square play-field (see layout.js); the
+ * game just scales that square onto the screen. All physics runs in field units
+ * so it is identical everywhere and matches the simulator exactly. Every tunable
+ * lives in config.js and every formula in economy.js — both shared with the
+ * stats dashboard.
  */
 (() => {
   "use strict";
 
   const C = window.IC.config;
   const E = window.IC.economy;
+  const LAY = window.IC.layout;
+  const FIELD = LAY.FIELD;
   const TAU = Math.PI * 2;
 
   // ---------------------------------------------------------------------------
   // Game state (persisted)
-  //
-  //  - `level`    : the global level index L. Every board you clear bumps it by
-  //                 one, and it drives boardCost / boardReward. It never resets.
-  //  - `universe` : how many universes you have finished (shown as "Meta"); it is
-  //                 the cosmetic grouping / palette selector and only advances on
-  //                 ascension.
-  //  - `ballsBought` : total level-1 balls ever bought, which prices the next one.
   // ---------------------------------------------------------------------------
   const DEFAULT_STATE = () => ({
     fragments: 0,
-    level: 0,
-    universe: 1,
+    level: 0,             // global level index; every board cleared bumps it
+    universe: 1,          // universes finished (HUD "Meta"); advances on ascension
     ballCounts: { 1: 1 }, // tier -> number of balls owned
-    ballsBought: 0,
+    ballsBought: 0,       // total tier-1 balls ever bought (prices the next one)
   });
 
   const state = DEFAULT_STATE();
@@ -49,24 +41,22 @@
   // screen) and `parent` (the meta-board it lives inside, or null while hunting).
   // ---------------------------------------------------------------------------
   const runtime = {
-    board: null,        // { blocks, portalIndex, universe } — active, full-screen
-    parent: null,       // the meta-board above, or null
-    phase: "play",      // "play" | "hunt" | "zoomOut" | "zoomIn" | "ascend"
-    anim: null,         // active zoom transition
-    interlude: null,    // active "upper universe" screen
-    pending: null,      // board to reveal once the interlude ends
-    huntGrace: 0,       // countdown before balls may dive into a meta block
+    board: null,
+    parent: null,
+    phase: "play",        // "play" | "hunt" | "zoomOut" | "zoomIn" | "ascend"
+    anim: null,
+    interlude: null,
+    pending: null,
+    huntGrace: 0,
+    paused: false,        // true while the intro overlay is up
 
     balls: [],
     particles: [],
     floaters: [],
     announce: null,
 
-    cols: 0,
-    rows: 0,
-    cell: 0,
-    marginX: 0,
-    marginTop: 0,
+    // Field -> screen transform (a centred square), computed on resize.
+    view: { D: 1, offX: 0, offY: 0, scale: 1 },
     fragTimestamps: [],
   };
 
@@ -85,57 +75,32 @@
     canvas.width = Math.max(1, Math.floor(W * dpr));
     canvas.height = Math.max(1, Math.floor(H * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    layoutGrid();
-  }
 
-  // ---------------------------------------------------------------------------
-  // Grid geometry. The block COUNT is fixed (the mobile layout) on every device
-  // so the metrics never depend on screen size; only the cell scales to fit.
-  // The grid sits in the upper half so the balls have room to roam below it.
-  // ---------------------------------------------------------------------------
-  function layoutGrid() {
-    const cols = C.GRID_COLS;
-    const rows = C.GRID_ROWS;
-    const cell = Math.max(24, Math.min(C.CELL_MAX, Math.floor(W / cols), Math.floor((H * 0.5) / rows)));
-
-    runtime.cols = cols;
-    runtime.rows = rows;
-    runtime.cell = cell;
-    runtime.marginX = (W - cols * cell) / 2;
-    runtime.marginTop = cell * 0.5;
+    // The play-field is a square, as large as fits, centred in the canvas.
+    const D = Math.min(W, H);
+    runtime.view = { D, offX: (W - D) / 2, offY: (H - D) / 2, scale: D / FIELD };
 
     if (!runtime.board) ensureBoards(true);
   }
 
-  function blockRect(r, c) {
-    const pad = runtime.cell * 0.08;
-    return {
-      x: runtime.marginX + c * runtime.cell + pad,
-      y: runtime.marginTop + r * runtime.cell + pad,
-      w: runtime.cell - pad * 2,
-      h: runtime.cell - pad * 2,
-    };
-  }
-
+  // ---------------------------------------------------------------------------
+  // Boards. Geometry comes from the shared layout; only the HP/reward split and
+  // the fractal bookkeeping live here.
+  // ---------------------------------------------------------------------------
   function cellRectOf(board, index) {
     const b = board.blocks[index];
-    return blockRect(b.r, b.c);
+    return LAY.brickRect(b.r, b.c);
   }
 
-  // Build a whole board for the given global level and universe. The board's
-  // total HP cost (from economy.boardCost) is split across the blocks by weight,
-  // and its total shard reward the same way, so both are independent of how many
-  // blocks there happen to be.
   function makeBoard(level, universe) {
     const cost = E.boardCost(level);
     const reward = E.boardReward(level);
 
-    // Random per-block weights (with a gentle bottom-heavier bias) that still sum
-    // to the board's cost — so blocks start visibly different but the total HP
-    // (the metric) is unchanged no matter the grid or randomness.
+    // Random per-block weights (bottom-heavier) that still sum to the board cost,
+    // so bricks start visibly varied but the total HP (the metric) is unchanged.
     const cells = [];
-    for (let r = 0; r < runtime.rows; r++) {
-      for (let c = 0; c < runtime.cols; c++) {
+    for (let r = 0; r < LAY.rows(); r++) {
+      for (let c = 0; c < LAY.cols(); c++) {
         cells.push({ r, c, w: 0.55 + r * 0.12 + Math.random() * 0.9 });
       }
     }
@@ -144,23 +109,13 @@
     const blocks = cells.map((cell) => {
       const share = cell.w / sum;
       const hp = cost * share;
-      return {
-        r: cell.r,
-        c: cell.c,
-        hp,
-        maxHp: hp,
-        reward: reward * share,
-        hit: 0,
-        alive: true,
-      };
+      return { r: cell.r, c: cell.c, hp, maxHp: hp, reward: reward * share, hit: 0, alive: true };
     });
     const maxBlockHp = blocks.reduce((m, b) => Math.max(m, b.maxHp), 0) || 1;
     return { blocks, portalIndex: null, universe, maxBlockHp };
   }
 
-  // A block's colour tracks its REMAINING HP within the universe's palette, so a
-  // tough/fresh brick and a nearly-broken one read differently, and the varied
-  // starting HP already spreads the fresh board across the palette.
+  // A brick's colour tracks its REMAINING HP within the universe's palette.
   function blockColor(board, block) {
     const pal = E.paletteFor(board.universe);
     const ratio = clamp01(block.hp / board.maxBlockHp);
@@ -178,8 +133,6 @@
     return board.blocks.length > 0 && board.blocks.every((b) => !b.alive);
   }
 
-  // (Re)create the starting pair of boards: the meta-board of the current
-  // universe and the fresh sub-board we clear inside one of its blocks.
   function ensureBoards(force) {
     if (!force && runtime.board) return;
     runtime.parent = makeBoard(state.level, state.universe);
@@ -190,28 +143,23 @@
     runtime.interlude = null;
     runtime.pending = null;
     runtime.huntGrace = 0;
-    placeBalls(W / 2, H * 0.7, Math.min(W, H) * 0.3);
+    placeBalls(FIELD / 2, FIELD * 0.82, FIELD * 0.3);
   }
 
   // ---------------------------------------------------------------------------
   // Balls (tiered: a tier-T ball deals economy.ballDamage(T))
   // ---------------------------------------------------------------------------
-  function ballRadius(tier) {
-    return Math.max(7, runtime.cell * 0.16) * (1 + (tier - 1) * 0.12);
-  }
-
-  function ballDamageOf(ball) {
-    return E.ballDamage(ball.level);
-  }
+  function ballDamageOf(ball) { return E.ballDamage(ball.level); }
 
   function makeBall(tier) {
     const angle = Math.random() * TAU;
+    const sp = LAY.ballSpeed();
     return {
-      x: W / 2,
-      y: H * 0.75,
-      vx: Math.cos(angle) * C.BALL_SPEED,
-      vy: -Math.abs(Math.sin(angle)) * C.BALL_SPEED - 60,
-      r: ballRadius(tier),
+      x: FIELD / 2,
+      y: FIELD * 0.82,
+      vx: Math.cos(angle) * sp,
+      vy: -Math.abs(Math.sin(angle)) * sp,
+      r: LAY.ballRadius(tier),
       level: tier,
     };
   }
@@ -221,9 +169,7 @@
     Object.keys(state.ballCounts)
       .map(Number)
       .sort((a, b) => b - a)
-      .forEach((lvl) => {
-        for (let i = 0; i < state.ballCounts[lvl]; i++) desired.push(lvl);
-      });
+      .forEach((lvl) => { for (let i = 0; i < state.ballCounts[lvl]; i++) desired.push(lvl); });
     if (desired.length > C.MAX_BALLS) desired.length = C.MAX_BALLS;
     if (desired.length === 0) desired.push(1);
 
@@ -231,7 +177,7 @@
     runtime.balls.length = desired.length;
     for (let i = 0; i < desired.length; i++) {
       runtime.balls[i].level = desired[i];
-      runtime.balls[i].r = ballRadius(desired[i]);
+      runtime.balls[i].r = LAY.ballRadius(desired[i]);
     }
   }
 
@@ -239,17 +185,17 @@
     for (const b of runtime.balls) {
       const a = Math.random() * TAU;
       const rr = Math.random() * spread * 0.5;
-      b.x = clamp(cx + Math.cos(a) * rr, b.r, Math.max(b.r, W - b.r));
-      b.y = clamp(cy + Math.sin(a) * rr, b.r, Math.max(b.r, H - b.r));
+      b.x = clamp(cx + Math.cos(a) * rr, b.r, FIELD - b.r);
+      b.y = clamp(cy + Math.sin(a) * rr, b.r, FIELD - b.r);
       const va = Math.random() * TAU;
-      b.vx = Math.cos(va) * C.BALL_SPEED;
-      b.vy = Math.sin(va) * C.BALL_SPEED;
+      const sp = LAY.ballSpeed();
+      b.vx = Math.cos(va) * sp;
+      b.vy = Math.sin(va) * sp;
     }
   }
 
   function ballCount1() { return state.ballCounts[1] || 0; }
 
-  // Merge MERGE_REQUIRED balls of `tier` into one ball of `tier + 1`.
   function mergeBalls(tier) {
     const count = state.ballCounts[tier] || 0;
     if (count < C.MERGE_REQUIRED) return;
@@ -259,7 +205,7 @@
     syncBalls();
     save();
     renderBallBar();
-    renderShop();  // capping level-1 balls may have unlocked buying again
+    renderShop();
     updateHud();
   }
 
@@ -271,15 +217,11 @@
     state.fragments += block.reward;
     runtime.fragTimestamps.push(performance.now());
 
-    const rect = blockRect(block.r, block.c);
+    const rect = LAY.brickRect(block.r, block.c);
     spawnParticles(rect.x + rect.w / 2, rect.y + rect.h / 2, blockColor(runtime.board, block));
     runtime.floaters.push({
-      x: rect.x + rect.w / 2,
-      y: rect.y + rect.h / 2,
-      text: "+" + E.formatNum(block.reward),
-      life: 1,
-      color: "#ffcf6b",
-      size: 16,
+      x: rect.x + rect.w / 2, y: rect.y + rect.h / 2,
+      text: "+" + E.formatNum(block.reward), life: 1, color: "#ffcf6b", size: 40,
     });
     updateHud();
   }
@@ -289,14 +231,7 @@
     block.hp -= dmg;
     block.hit = 1;
     spawnParticles(cx, cy, blockColor(runtime.board, block), 4);
-    runtime.floaters.push({
-      x: cx,
-      y: cy - 6,
-      text: "-" + E.formatNum(dmg),
-      life: 0.7,
-      color: "#ffffff",
-      size: 13,
-    });
+    runtime.floaters.push({ x: cx, y: cy - 14, text: "-" + E.formatNum(dmg), life: 0.7, color: "#ffffff", size: 32 });
     if (block.hp <= 0) breakBlock(block);
   }
 
@@ -311,9 +246,8 @@
 
   function completeZoomOut() {
     const { meta, cellIndex } = runtime.anim;
-    meta.blocks[cellIndex].alive = false; // the block we just cleared
-
-    state.level += 1;                      // one more level down the fractal
+    meta.blocks[cellIndex].alive = false;
+    state.level += 1;
 
     runtime.board = meta;
     runtime.parent = null;
@@ -340,7 +274,7 @@
     runtime.board = child;
     runtime.anim = null;
     runtime.phase = "play";
-    placeBalls(W / 2, H * 0.5, Math.min(W, H) * 0.3);
+    placeBalls(FIELD / 2, FIELD * 0.5, FIELD * 0.3);
   }
 
   function startAscension() {
@@ -373,34 +307,30 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Particles & juice
+  // Particles & juice (field units)
   // ---------------------------------------------------------------------------
   function spawnParticles(x, y, color, count = 12) {
     for (let i = 0; i < count; i++) {
       const a = Math.random() * TAU;
-      const sp = 40 + Math.random() * 160;
+      const sp = 100 + Math.random() * 400;
       runtime.particles.push({
         x, y,
-        vx: Math.cos(a) * sp,
-        vy: Math.sin(a) * sp,
-        life: 0.5 + Math.random() * 0.4,
-        max: 0.9,
-        color,
-        size: 1 + Math.random() * 3,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        life: 0.5 + Math.random() * 0.4, max: 0.9, color,
+        size: 3 + Math.random() * 8,
       });
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Physics: circle vs axis-aligned block, resolved per axis. Returns the block
-  // index it touched (or -1) so the hunt phase can decide to dive in.
+  // Physics (field units): circle vs axis-aligned brick, resolved per axis.
   // ---------------------------------------------------------------------------
   function ballHitsBlock(ball, doDamage) {
     const blocks = runtime.board.blocks;
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
       if (!block.alive) continue;
-      const rect = blockRect(block.r, block.c);
+      const rect = LAY.brickRect(block.r, block.c);
       const nearestX = clamp(ball.x, rect.x, rect.x + rect.w);
       const nearestY = clamp(ball.y, rect.y, rect.y + rect.h);
       const dx = ball.x - nearestX;
@@ -408,13 +338,8 @@
       if (dx * dx + dy * dy <= ball.r * ball.r) {
         const overlapX = ball.r - Math.abs(dx);
         const overlapY = ball.r - Math.abs(dy);
-        if (overlapX < overlapY) {
-          ball.vx = -ball.vx;
-          ball.x += ball.vx > 0 ? overlapX : -overlapX;
-        } else {
-          ball.vy = -ball.vy;
-          ball.y += ball.vy > 0 ? overlapY : -overlapY;
-        }
+        if (overlapX < overlapY) { ball.vx = -ball.vx; ball.x += ball.vx > 0 ? overlapX : -overlapX; }
+        else { ball.vy = -ball.vy; ball.y += ball.vy > 0 ? overlapY : -overlapY; }
         if (doDamage) damageBlock(block, ballDamageOf(ball), nearestX, nearestY);
         return i;
       }
@@ -426,6 +351,7 @@
   // Update loop
   // ---------------------------------------------------------------------------
   function update(dt) {
+    if (runtime.paused) return;
     if (runtime.phase === "ascend") { updateAscension(dt); return; }
 
     if (runtime.phase === "play") updatePlay(dt);
@@ -440,9 +366,9 @@
       ball.x += ball.vx * dt;
       ball.y += ball.vy * dt;
       if (ball.x - ball.r < 0) { ball.x = ball.r; ball.vx = Math.abs(ball.vx); }
-      if (ball.x + ball.r > W) { ball.x = W - ball.r; ball.vx = -Math.abs(ball.vx); }
+      if (ball.x + ball.r > FIELD) { ball.x = FIELD - ball.r; ball.vx = -Math.abs(ball.vx); }
       if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy = Math.abs(ball.vy); }
-      if (ball.y + ball.r > H) { ball.y = H - ball.r; ball.vy = -Math.abs(ball.vy); }
+      if (ball.y + ball.r > FIELD) { ball.y = FIELD - ball.r; ball.vy = -Math.abs(ball.vy); }
     }
   }
 
@@ -454,9 +380,7 @@
 
   function updateHunt(dt) {
     if (boardCleared(runtime.board)) { startAscension(); return; }
-
     moveBallsInWalls(dt);
-
     let dive = -1;
     const canDive = runtime.huntGrace <= 0;
     for (const ball of runtime.balls) {
@@ -470,10 +394,7 @@
   function updateZoom(dt) {
     const a = runtime.anim;
     a.t += dt / C.ZOOM_DUR;
-    if (a.t >= 1) {
-      if (a.kind === "out") completeZoomOut();
-      else completeZoomIn();
-    }
+    if (a.t >= 1) { if (a.kind === "out") completeZoomOut(); else completeZoomIn(); }
   }
 
   function updateAscension(dt) {
@@ -486,44 +407,34 @@
     for (const block of runtime.board.blocks) {
       if (block.hit > 0) block.hit = Math.max(0, block.hit - dt * 6);
     }
-
     if (runtime.announce) {
       runtime.announce.life -= dt;
       if (runtime.announce.life <= 0) runtime.announce = null;
     }
-
     for (let i = runtime.particles.length - 1; i >= 0; i--) {
       const p = runtime.particles[i];
       p.life -= dt;
       if (p.life <= 0) { runtime.particles.splice(i, 1); continue; }
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.vy += 260 * dt;
-      p.vx *= 0.98;
+      p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 650 * dt; p.vx *= 0.98;
     }
-
     for (let i = runtime.floaters.length - 1; i >= 0; i--) {
       const f = runtime.floaters[i];
-      f.life -= dt;
-      f.y -= 26 * dt;
+      f.life -= dt; f.y -= 65 * dt;
       if (f.life <= 0) runtime.floaters.splice(i, 1);
     }
-
     const cutoff = performance.now() - 1000;
-    while (runtime.fragTimestamps.length && runtime.fragTimestamps[0] < cutoff) {
-      runtime.fragTimestamps.shift();
-    }
+    while (runtime.fragTimestamps.length && runtime.fragTimestamps[0] < cutoff) runtime.fragTimestamps.shift();
   }
 
   // ---------------------------------------------------------------------------
-  // Render
+  // Render. Everything above works in field units; here we drop into the centred
+  // square (translate+scale) and draw, so the fractal zoom is a camera within it.
   // ---------------------------------------------------------------------------
-  const FULL_RECT = () => ({ x: 0, y: 0, w: W, h: H });
+  const FULL_RECT = () => ({ x: 0, y: 0, w: FIELD, h: FIELD });
 
   function cellFillRect(cell) {
-    const sx = W / cell.w;
-    const sy = H / cell.h;
-    return { x: -cell.x * sx, y: -cell.y * sy, w: W * sx, h: H * sy };
+    const sx = FIELD / cell.w, sy = FIELD / cell.h;
+    return { x: -cell.x * sx, y: -cell.y * sy, w: FIELD * sx, h: FIELD * sy };
   }
 
   function render() {
@@ -531,9 +442,18 @@
 
     if (runtime.phase === "ascend") { drawInterlude(runtime.interlude); return; }
 
+    const v = runtime.view;
+    ctx.save();
+    ctx.translate(v.offX, v.offY);
+    ctx.scale(v.scale, v.scale);
+
+    // Faint backdrop so the square play-field reads as a contained space.
+    ctx.fillStyle = "#0a0e14";
+    roundRect(0, 0, FIELD, FIELD, 28);
+    ctx.fill();
+
     if (runtime.phase === "play" || runtime.phase === "hunt") {
-      const hint = runtime.phase === "hunt";
-      drawBoard(runtime.board, FULL_RECT(), 1, true, hint);
+      drawBoard(runtime.board, FULL_RECT(), 1, true, runtime.phase === "hunt");
       drawParticles();
       drawFloaters();
     } else {
@@ -542,7 +462,6 @@
       const e = smoothstep(clamp01(a.t));
       const full = FULL_RECT();
       const zoomed = cellFillRect(cell);
-
       if (a.kind === "out") {
         drawBoard(a.meta, lerpRect(zoomed, full, e), clamp01(e * 1.6), false, true);
         drawBoard(a.child, lerpRect(full, cell, e), clamp01((1 - e) * 1.6), true, false);
@@ -552,16 +471,17 @@
       }
     }
 
+    ctx.restore();
     drawAnnounce();
   }
 
   function drawBoard(board, dest, alpha, withBalls, portalHint) {
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, W, H);
+    roundRect(0, 0, FIELD, FIELD, 28);
     ctx.clip();
     ctx.translate(dest.x, dest.y);
-    ctx.scale(dest.w / W, dest.h / H);
+    ctx.scale(dest.w / FIELD, dest.h / FIELD);
     drawBlocks(board, alpha, portalHint);
     if (withBalls) drawBalls(alpha);
     ctx.restore();
@@ -571,11 +491,11 @@
     const pulse = portalHint ? 0.5 + 0.5 * Math.sin(performance.now() / 260) : 0;
     for (const block of board.blocks) {
       if (!block.alive) continue;
-      const rect = blockRect(block.r, block.c);
+      const rect = LAY.brickRect(block.r, block.c);
       const hpRatio = block.hp / block.maxHp;
-      const r = Math.min(10, rect.w * 0.18);
-
+      const r = Math.min(16, rect.w * 0.18);
       const col = blockColor(board, block);
+
       ctx.save();
       ctx.globalAlpha = baseAlpha * (0.35 + 0.65 * hpRatio);
       roundRect(rect.x, rect.y, rect.w, rect.h, r);
@@ -584,19 +504,14 @@
       grad.addColorStop(1, shade(col, -0.35));
       ctx.fillStyle = grad;
       ctx.fill();
-
-      if (block.hit > 0) {
-        ctx.globalAlpha = baseAlpha * block.hit * 0.7;
-        ctx.fillStyle = "#ffffff";
-        ctx.fill();
-      }
+      if (block.hit > 0) { ctx.globalAlpha = baseAlpha * block.hit * 0.7; ctx.fillStyle = "#ffffff"; ctx.fill(); }
       ctx.restore();
 
       if (portalHint) {
         ctx.save();
         ctx.globalAlpha = baseAlpha * (0.25 + 0.4 * pulse);
         ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
         roundRect(rect.x, rect.y, rect.w, rect.h, r);
         ctx.stroke();
         ctx.restore();
@@ -606,7 +521,7 @@
         ctx.save();
         ctx.globalAlpha = baseAlpha * (1 - hpRatio) * 0.5;
         ctx.strokeStyle = "#0d1117";
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(rect.x + rect.w * 0.3, rect.y);
         ctx.lineTo(rect.x + rect.w * 0.5, rect.y + rect.h * 0.6);
@@ -630,20 +545,17 @@
     for (const ball of runtime.balls) {
       const color = C.BALL_COLORS[(ball.level - 1) % C.BALL_COLORS.length];
       const g = ctx.createRadialGradient(
-        ball.x - ball.r * 0.3, ball.y - ball.r * 0.3, ball.r * 0.2,
-        ball.x, ball.y, ball.r
-      );
+        ball.x - ball.r * 0.3, ball.y - ball.r * 0.3, ball.r * 0.2, ball.x, ball.y, ball.r);
       g.addColorStop(0, "#ffffff");
       g.addColorStop(1, color);
       ctx.globalAlpha = baseAlpha;
       ctx.fillStyle = g;
       ctx.shadowColor = color;
-      ctx.shadowBlur = 16;
+      ctx.shadowBlur = 26;
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, ball.r, 0, TAU);
       ctx.fill();
       ctx.shadowBlur = 0;
-
       if (ball.level > 1) {
         ctx.fillStyle = "#0d1117";
         ctx.font = `800 ${Math.round(ball.r)}px Inter, system-ui, sans-serif`;
@@ -672,7 +584,7 @@
     for (const f of runtime.floaters) {
       ctx.globalAlpha = Math.max(0, f.life);
       ctx.fillStyle = f.color;
-      ctx.font = `700 ${f.size || 15}px Inter, system-ui, sans-serif`;
+      ctx.font = `700 ${f.size || 34}px Inter, system-ui, sans-serif`;
       ctx.fillText(f.text, f.x, f.y);
     }
     ctx.globalAlpha = 1;
@@ -705,9 +617,7 @@
     else if (it.life < 0.4) a = it.life / 0.4;
     a = clamp01(a);
 
-    const cx = W / 2, cy = H * 0.42;
-    const R = Math.min(W, H);
-
+    const cx = W / 2, cy = H * 0.42, R = Math.min(W, H);
     ctx.save();
     ctx.globalAlpha = a;
     ctx.fillStyle = "#05070c";
@@ -779,14 +689,8 @@
   function smoothstep(t) { return t * t * (3 - 2 * t); }
   function lerp(a, b, t) { return a + (b - a) * t; }
   function lerpRect(a, b, t) {
-    return {
-      x: lerp(a.x, b.x, t),
-      y: lerp(a.y, b.y, t),
-      w: lerp(a.w, b.w, t),
-      h: lerp(a.h, b.h, t),
-    };
+    return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), w: lerp(a.w, b.w, t), h: lerp(a.h, b.h, t) };
   }
-
   function shade(hex, amt) {
     const n = parseInt(hex.slice(1), 16);
     let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
@@ -796,21 +700,26 @@
     return `rgb(${r},${g},${b})`;
   }
 
+  // Screen point -> field point (inverse of the view transform).
+  function toField(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const v = runtime.view;
+    return { x: (clientX - rect.left - v.offX) / v.scale, y: (clientY - rect.top - v.offY) / v.scale };
+  }
+
   // ---------------------------------------------------------------------------
   // Input: click / tap
   // ---------------------------------------------------------------------------
   function onPointer(clientX, clientY) {
+    if (runtime.paused) return;
     if (runtime.phase !== "play" && runtime.phase !== "hunt") return;
-    const rect = canvas.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-
+    const pt = toField(clientX, clientY);
     for (let i = 0; i < runtime.board.blocks.length; i++) {
       const block = runtime.board.blocks[i];
       if (!block.alive) continue;
-      const b = blockRect(block.r, block.c);
-      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
-        if (runtime.phase === "play") damageBlock(block, E.ballDamage(1), x, y);
+      const b = LAY.brickRect(block.r, block.c);
+      if (pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h) {
+        if (runtime.phase === "play") damageBlock(block, E.ballDamage(1), pt.x, pt.y);
         else startZoomIn(i);
         hideHint();
         return;
@@ -820,17 +729,22 @@
 
   canvas.addEventListener("pointerdown", (e) => onPointer(e.clientX, e.clientY));
 
-  // Intro overlay — shown only on a brand-new game (or after a reset), naming the
-  // universe you begin inside (a Quark) and how to play.
+  // ---------------------------------------------------------------------------
+  // Intro overlay — shown on a fresh game / reset, and pauses the game.
+  // ---------------------------------------------------------------------------
   const introEl = document.getElementById("intro");
   function showIntro() {
-    const name = E.universeName(state.universe);
-    introEl.querySelector(".intro-name").textContent = name;
+    runtime.paused = true;
+    if (!introEl) return;
+    introEl.querySelector(".intro-name").textContent = E.universeName(state.universe);
     introEl.querySelector(".intro-body").textContent =
-      `the smallest speck there is. Shatter every brick to zoom out and discover what contains it.`;
+      "the smallest speck there is. Shatter every brick to zoom out and discover what contains it.";
     introEl.classList.remove("hidden");
   }
-  function hideIntro() { introEl.classList.add("hidden"); }
+  function hideIntro() {
+    runtime.paused = false;
+    if (introEl) introEl.classList.add("hidden");
+  }
   if (introEl) introEl.addEventListener("pointerdown", (e) => { e.stopPropagation(); hideIntro(); });
 
   let hintHidden = false;
@@ -843,8 +757,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Shop — buying level-1 balls (the only purchase for now; merging is in the
-  // ball banner). Everything else is derived from balls + merges.
+  // Shop — buying tier-1 balls (the only purchase; merging is in the banner).
   // ---------------------------------------------------------------------------
   const shopEl = document.getElementById("upgrades");
 
@@ -877,7 +790,7 @@
         <span class="u-name">Extra Ball</span>
         <span class="u-level">${count} / ${C.LEVEL1_CAP}</span>
       </div>
-      <div class="u-desc">A level-1 ball dealing ${E.formatNum(E.ballDamage(1))} damage. Merge ten into a stronger one.</div>
+      <div class="u-desc">A tier-1 ball dealing ${E.formatNum(E.ballDamage(1))} damage. Merge ten into a stronger one.</div>
       <div class="u-cost">${capped ? "Max 10 — merge them" : E.formatNum(cost)}</div>
     `;
     btn.addEventListener("click", buyBall);
@@ -894,7 +807,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Ball banner: per-tier counts + merge buttons.
+  // Ball banner: per-tier counts, per-ball damage, and merge buttons.
   // ---------------------------------------------------------------------------
   const ballbarEl = document.getElementById("ballbar");
 
@@ -915,8 +828,8 @@
         <span class="dot" style="background:${color}; color:${color}"></span>
         <span class="lv">Lv ${tier}</span>
         <span class="ct">×${count}</span>
+        <span class="dmg">${E.formatNum(E.ballDamage(tier))} dmg</span>
       `;
-
       if (count >= C.MERGE_REQUIRED) {
         const btn = document.createElement("button");
         btn.className = "merge";
@@ -935,7 +848,7 @@
   const fpsEl = document.getElementById("fps");
   const boardEl = document.getElementById("board");
 
-  // "2.4" = universe 2, four levels deep into it.
+  // "2.4" = universe 2, four levels deep.
   function metaLabel() {
     const per = E.blocksPerBoard();
     const sub = clamp(state.level - (state.universe - 1) * per, 0, per);
@@ -995,9 +908,7 @@
 
   function resetGame() {
     try { localStorage.removeItem(C.SAVE_KEY); } catch (_) {}
-
     Object.assign(state, DEFAULT_STATE());
-
     runtime.balls.length = 0;
     runtime.particles.length = 0;
     runtime.floaters.length = 0;
@@ -1009,7 +920,6 @@
     runtime.pending = null;
     runtime.phase = "play";
     runtime.huntGrace = 0;
-
     syncBalls();
     ensureBoards(true);
     renderShop();
@@ -1037,16 +947,10 @@
     let dt = (now - last) / 1000;
     last = now;
     if (dt > 0.05) dt = 0.05;
-
     update(dt);
     render();
-
     hudTimer += dt;
-    if (hudTimer > 0.25) {
-      hudTimer = 0;
-      fpsEl.textContent = runtime.fragTimestamps.length;
-    }
-
+    if (hudTimer > 0.25) { hudTimer = 0; fpsEl.textContent = runtime.fragTimestamps.length; }
     requestAnimationFrame(frame);
   }
 
@@ -1060,7 +964,6 @@
     renderShop();
     renderBallBar();
     updateHud();
-    // Greet new players (fresh game only, not every reload).
     if (state.level === 0 && state.universe === 1 && state.ballsBought === 0) showIntro();
     window.addEventListener("resize", resize);
     if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);

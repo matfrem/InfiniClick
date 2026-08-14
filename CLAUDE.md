@@ -84,12 +84,13 @@ must merge. Ten balls of a tier **merge** (button in the ball banner) into one o
 next tier. Damage rises steeply per tier,
 
 ```
-ballDamage(T) = DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)^(T-1)   // 10, 300, 9000, …
+ballDamage(T) = DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)^(T-1)   // 10, 200, 4000, …
 ```
 
-so a merged ball is worth 3× the ten balls it consumed (ZenShards-style) — merging is
-always the right move. The next tier-1 ball is priced `BALL_BASE_COST ·
-BALL_COST_GROWTH^(balls ever bought)`.
+so a merged ball out-damages the ten it consumed by `MERGE_DAMAGE_MULT` (default 2×,
+ZenShards-style) — though you trade ten balls for one, which costs board coverage.
+Each ball's damage is shown in the banner. The next tier-1 ball is priced
+`BALL_BASE_COST · BALL_COST_GROWTH^(balls ever bought)`.
 
 ## Running the game
 
@@ -109,6 +110,7 @@ python3 -m http.server 8000
 | `style.css`  | Dark "zen" theme, layout and shop styling.                        |
 | `config.js`  | Every tunable knob (`IC.config`) — the one place to rebalance.     |
 | `economy.js` | Pure formulas (`IC.economy`) shared by the game and the stats page.|
+| `layout.js`  | Shared brick geometry (`IC.layout`) in a normalised square field.  |
 | `game.js`    | The game itself: physics, rendering, the fractal state machine, saving. |
 | `simul.html` | Physics simulator: measures how fast N balls clear the current layout. |
 | `stats.js`   | Baked output of `simul.html` (`IC.sim`) — the measured layout ratios. |
@@ -118,9 +120,17 @@ python3 -m http.server 8000
 
 ## Architecture
 
-`config.js` sets `window.IC.config` (data) and `economy.js` sets `window.IC.economy`
-(pure formulas) — loaded, in that order, before `game.js`. The game reads both as
-`C` and `E`. `stats.html` loads the same two files and nothing else of the game.
+`config.js` (`IC.config`, data), `economy.js` (`IC.economy`, formulas) and
+`layout.js` (`IC.layout`, brick geometry) load in that order before `game.js`, which
+reads them as `C`, `E`, `LAY`. `stats.html` loads config + economy (+ `stats.js`);
+`simul.html` loads config + economy + layout.
+
+**Coordinates.** Bricks and balls live in `layout.js`'s **normalised square field**
+(`FIELD × FIELD` units): the grid uses the full width at the top, the balls bounce in
+the whole square. All physics runs in field units, so it is identical on every device
+and matches the simulator exactly. The game keeps a `view` transform (a centred square
+scaled to the canvas) and draws everything through it; the fractal zoom is a camera
+*inside* the field. Screen taps are mapped back to field units (`toField`).
 
 `game.js` lives inside an IIFE (no globals of its own) and is split into sections:
 
@@ -149,9 +159,9 @@ More upgrades can be re-introduced later; they belong in `config.js`/`economy.js
   `COST_GROWTH`), reward (`REWARD_RATIO`), ascension bonus (`ASCEND_BONUS_MULT`), ball
   damage/merge (`DMG_BASE`, `MERGE_REQUIRED`, `MERGE_DAMAGE_MULT`), ball price
   (`BALL_BASE_COST`, `BALL_COST_GROWTH`), cap (`LEVEL1_CAP`), feel (`ZOOM_DUR`,
-  `HUNT_GRACE`, `ASCEND_DUR`), grid (`GRID_COLS`, `GRID_ROWS`, `CELL_MAX`), universe
-  names (`UNIVERSE_NAMES`). Open `stats.html` to see the effect of any change on the
-  cost/reward curves before committing it.
+  `HUNT_GRACE`, `ASCEND_DUR`), grid (`GRID_COLS`, `GRID_ROWS`), ball speed
+  (`BALL_SPEED`, in field units), universe names (`UNIVERSE_NAMES`). Open `stats.html`
+  to see the effect of any change on the cost/reward curves before committing it.
 - **Formulas** (the *shape* of the curves): `economy.js`.
 - **Time-per-level / how long a universe takes**: `stats.html`'s time chart uses
   `stats.js` — geometric clear-time ratios measured by `simul.html`. If you change

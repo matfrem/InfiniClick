@@ -72,7 +72,7 @@
     <h2>Ball economy</h2>
     <div class="panel charts">
       <canvas id="chartBalls" height="300"></canvas>
-      <p class="note">A tier-T ball deals <code>DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)^(T−1)</code>. With the defaults that is 10 → 300 → 9000 …: a merged ball is worth 3× the ten balls it consumed, so merging always pays off. Ball price climbs with the total ever bought.</p>
+      <p class="note" id="ballNote"></p>
     </div>
 
     <h2>Key numbers</h2>
@@ -330,6 +330,10 @@
 
       document.getElementById("blocksNote").textContent = BLOCKS;
       document.getElementById("uniMult").textContent = E.universeMultiplier(BLOCKS).toFixed(1);
+
+      const net = C.MERGE_REQUIRED * C.MERGE_DAMAGE_MULT / C.MERGE_REQUIRED; // = MERGE_DAMAGE_MULT
+      document.getElementById("ballNote").innerHTML =
+        `A tier-T ball deals <code>DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)^(T−1)</code> — here ${E.formatNum(E.ballDamage(1))} → ${E.formatNum(E.ballDamage(2))} → ${E.formatNum(E.ballDamage(3))} …, so a merged ball out-damages the ten it consumed by <b>${net}×</b> (you trade ten balls for one, though, which costs you coverage). Ball price climbs with the total ever bought.`;
 
       const rows = [
         ["Layout (simulated)", SIM ? `${SIM.layout.cols}×${SIM.layout.rows} = ${SIM.layout.blocks} blocks` : "no stats.js"],

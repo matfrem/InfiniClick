@@ -50,10 +50,12 @@ charts them live. There is a single growth law, not a special per-universe rule.
   difficulty; the *ratio* (default 0.6) is the dial for how fast shards accumulate.
 - **Damage growth** comes only from balls right now: buying tier-1 balls (up to ten)
   and merging. A tier-T ball deals `DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)
-  ^(T-1)` — 10 → 300 → 9000 …, i.e. **30× per tier**. Because a board's cost grows
-  only `COST_GROWTH` per level, a single merge (30×) buys you ~`ln 30 / ln 1.1 ≈ 36`
-  levels of headroom. That interplay of `COST_GROWTH` vs `MERGE_DAMAGE_MULT` and the
-  ball price is the core of the balance.
+  ^(T-1)` — with the defaults 10 → 200 → 4000 …, i.e. **`MERGE_REQUIRED ·
+  MERGE_DAMAGE_MULT` = 20× per tier**. Because a board's cost grows only `COST_GROWTH`
+  per level, a single merge (20×) buys you ~`ln 20 / ln 1.1 ≈ 31` levels of headroom.
+  That interplay of `COST_GROWTH` vs `MERGE_DAMAGE_MULT` and the ball price is the core
+  of the balance — a smaller `MERGE_DAMAGE_MULT` makes the time-per-level sawtooth
+  (each tooth is a forced merge) shallower.
 - **Prestige = ascension.** Finishing a meta-board grants `ascendBonus(L) =
   ASCEND_BONUS_MULT · boardReward(L)`. Classic prestige math (Pecorella, Part III)
   applies: make the bonus worth roughly the time the universe took.

@@ -27,7 +27,7 @@ IC.config = {
   HP_BASE: 200,
   COST_GROWTH: 1.1,
   REWARD_RATIO: 0.6,        // shards earned for clearing a whole board = ratio * cost
-  ASCEND_BONUS_MULT: 4,     // universe-up bonus = this * boardReward(level)
+  ASCEND_BONUS_MULT: 8,     // universe-up bonus = this * boardReward(level)
 
   // --- Balls -----------------------------------------------------------------
   // A tier-T ball deals DMG_BASE * (MERGE_REQUIRED * MERGE_DAMAGE_MULT) ^ (T-1).
@@ -35,12 +35,12 @@ IC.config = {
   // balls it consumed, so merging is always the right move (ZenShards-style).
   DMG_BASE: 10,
   MERGE_REQUIRED: 10,       // balls of a tier needed to merge into the next
-  MERGE_DAMAGE_MULT: 3,     // a merged ball is worth this * the balls it consumed
+  MERGE_DAMAGE_MULT: 2,     // a merged ball is worth this * the balls it consumed
   LEVEL1_CAP: 10,           // max level-1 balls you may hold before you must merge
   BALL_BASE_COST: 100,      // cost of your very first bought level-1 ball
   BALL_COST_GROWTH: 1.12,   // the next level-1 ball costs this^(total ever bought)
   MAX_BALLS: 60,            // hard cap on simultaneous balls (performance)
-  BALL_SPEED: 200,          // base ball speed in px/s
+  BALL_SPEED: 520,          // base ball speed in FIELD units/s (see layout.js)
 
   // --- Feel ------------------------------------------------------------------
   ZOOM_DUR: 0.55,           // seconds a zoom transition lasts
@@ -48,11 +48,11 @@ IC.config = {
   ASCEND_DUR: 5,            // seconds the "upper universe" interlude lasts
 
   // --- Grid ------------------------------------------------------------------
-  // A FIXED block count (the mobile layout) on every device, so the metrics and
-  // the simulator never depend on screen size. The cell just scales to fit.
+  // A FIXED block count on every device. Bricks are laid out in a normalised
+  // square FIELD (see layout.js), full width, and the game scales that square to
+  // the screen — so the metrics and the simulator never depend on resolution.
   GRID_COLS: 6,
   GRID_ROWS: 4,
-  CELL_MAX: 96,             // cap the cell size so a wide desktop stays mobile-ish
 
   // --- Universe names (the fractal scale, smallest first) --------------------
   // You start inside a quark and zoom outward. Beyond the list it falls back to
