@@ -103,7 +103,9 @@ python3 -m http.server 8000
 | `config.js`  | Every tunable knob (`IC.config`) — the one place to rebalance.     |
 | `economy.js` | Pure formulas (`IC.economy`) shared by the game and the stats page.|
 | `game.js`    | The game itself: physics, rendering, the fractal state machine, saving. |
-| `stats.html` | Economy dashboard: live cost/reward curves from `economy.js`.     |
+| `simul.html` | Physics simulator: measures how fast N balls clear the current layout. |
+| `stats.js`   | Baked output of `simul.html` (`IC.sim`) — the measured layout ratios. |
+| `stats.html` | Economy dashboard: cost/reward, ball power and **time-per-level** curves. |
 | `docs/`      | `idle-game-tuning.md`: incremental-game balance theory & knobs.   |
 | `CLAUDE.md`  | This document.                                                    |
 
@@ -143,6 +145,10 @@ More upgrades can be re-introduced later; they belong in `config.js`/`economy.js
   `HUNT_GRACE`, `ASCEND_DUR`), grid density (`GRID_TARGET`). Open `stats.html` to see
   the effect of any change on the cost/reward curves before committing it.
 - **Formulas** (the *shape* of the curves): `economy.js`.
+- **Time-per-level / how long a universe takes**: `stats.html`'s time chart uses
+  `stats.js` — geometric clear-time ratios measured by `simul.html`. If you change
+  the grid or the physics, re-run `simul.html` (it has a stage-size box for
+  desktop vs mobile) and copy its output into `stats.js`.
 - **Palette / theme**: CSS variables in `:root` of `style.css`. **Block palettes**
   (one per universe) and **ball colours**: `PALETTES` / `BALL_COLORS` in `config.js`.
 

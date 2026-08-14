@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InfiniClick — Simulator</title>
+  <style>
+    :root {
+      --bg: #0d1117; --panel: #131a24; --panel-2: #182230; --line: #223041;
+      --text: #e6edf3; --muted: #8b98a5; --accent: #56d3c9; --accent-2: #8a7dff; --gold: #ffcf6b;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); padding: 20px;
+      font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: var(--accent); }
+    .wrap { max-width: 1000px; margin: 0 auto; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin: 24px 0 10px; }
+    .sub { color: var(--muted); font-size: 13px; margin: 0 0 8px; line-height: 1.5; }
+    .row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .panel { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+    canvas#view { width: 100%; height: 300px; background: #0a0e14; border-radius: 10px; display: block; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--gold); }
+    pre { background: #0a0e14; border: 1px solid var(--line); border-radius: 10px; padding: 12px; overflow: auto; font-size: 12px; color: #c9d5e1; }
+    code { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; font-size: 12px; }
+    .status { color: var(--gold); font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="row">
+      <div>
+        <h1>InfiniClick — Simulator</h1>
+        <p class="sub">Runs the real ball/block physics on the <b>current layout</b> (from <code>config.js</code>) to measure two purely geometric quantities: how many block-hits one ball lands per second, and how long <b>N balls</b> take to sweep a whole board clean. These ratios feed the time-per-level model in <a href="stats.html">stats.html</a>.</p>
+      </div>
+      <a href="stats.html">← Economy stats</a>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px">
+      <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap">
+        <div class="ctrl" style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Stage width (px)</label>
+          <input id="inW" type="number" step="20" value="840" style="font:inherit;font-size:14px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:120px">
+        </div>
+        <div class="ctrl" style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Stage height (px)</label>
+          <input id="inH" type="number" step="20" value="680" style="font:inherit;font-size:14px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:120px">
+        </div>
+        <button id="remeasure" style="font:inherit;font-weight:700;color:var(--bg);background:var(--accent);border:none;border-radius:8px;padding:10px 16px;cursor:pointer">Re-measure</button>
+        <span class="sub" style="margin:0">Desktop ≈ 840×680; a portrait phone ≈ 400×620. Enter your stage size and re-measure to model your layout.</span>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <h2 style="margin-top:0">Live view</h2>
+        <canvas id="view"></canvas>
+        <p class="sub" id="viewNote">A one-shot clear with a handful of balls, looping.</p>
+      </div>
+      <div class="panel">
+        <h2 style="margin-top:0">Measured — <span class="status" id="status">measuring…</span></h2>
+        <table id="results"><tr><th>Balls</th><th style="text-align:right">Clear time (s)</th><th style="text-align:right">Hits/s total</th></tr></table>
+        <p class="sub" id="hps"></p>
+      </div>
+    </div>
+
+    <h2>stats.js (measured ratios)</h2>
+    <p class="sub">This is baked into the repo as <code>stats.js</code> and consumed by <code>stats.html</code>. Re-run this page after changing the grid or physics, then copy it over.</p>
+    <pre id="out">…</pre>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="economy.js"></script>
+  <script>
+    const C = window.IC.config;
+    const DT = 1 / 60;
+    const speed = C.BALL_SPEED;
+
+    // Stage size and the layout derived from it (same maths as game.js ›
+    // layoutGrid). Mutable so the Re-measure button can model any device.
+    let W, H, cols, cell, rows, marginX, marginTop, pad, ballR, NBLOCKS;
+    function computeLayout(w, h) {
+      W = w; H = h;
+      cols = Math.max(6, Math.floor(W / C.GRID_TARGET));
+      cell = Math.min(96, Math.floor(W / cols));
+      rows = Math.max(3, Math.floor((H * 0.52) / cell));
+      marginX = (W - cols * cell) / 2;
+      marginTop = cell * 0.6;
+      pad = cell * 0.08;
+      ballR = Math.max(7, cell * 0.16);
+      NBLOCKS = cols * rows;
+    }
+    computeLayout(840, 680);
+
+    function blockRect(r, c) {
+      return { x: marginX + c * cell + pad, y: marginTop + r * cell + pad, w: cell - pad * 2, h: cell - pad * 2 };
+    }
+
+    // ---- physics (mirrors game.js) -------------------------------------------
+    function makeBalls(n) {
+      const balls = [];
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        balls.push({
+          x: ballR + Math.random() * (W - 2 * ballR),
+          y: ballR + Math.random() * (H - 2 * ballR),
+          vx: Math.cos(a) * speed,
+          vy: Math.sin(a) * speed,
+          r: ballR,
+        });
+      }
+      return balls;
+    }
+
+    function makeBlocks() {
+      const b = [];
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) b.push({ r, c, alive: true });
+      return b;
+    }
+
+    // Move one ball, bounce off walls, bounce off the first live block it hits.
+    // Returns the hit block index (or -1). `kill` breaks the block on contact.
+    function stepBall(ball, blocks, kill) {
+      ball.x += ball.vx * DT;
+      ball.y += ball.vy * DT;
+      if (ball.x - ball.r < 0) { ball.x = ball.r; ball.vx = Math.abs(ball.vx); }
+      if (ball.x + ball.r > W) { ball.x = W - ball.r; ball.vx = -Math.abs(ball.vx); }
+      if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy = Math.abs(ball.vy); }
+      if (ball.y + ball.r > H) { ball.y = H - ball.r; ball.vy = -Math.abs(ball.vy); }
+
+      for (let i = 0; i < blocks.length; i++) {
+        const bl = blocks[i];
+        if (!bl.alive) continue;
+        const rect = blockRect(bl.r, bl.c);
+        const nx = Math.max(rect.x, Math.min(ball.x, rect.x + rect.w));
+        const ny = Math.max(rect.y, Math.min(ball.y, rect.y + rect.h));
+        const dx = ball.x - nx, dy = ball.y - ny;
+        if (dx * dx + dy * dy <= ball.r * ball.r) {
+          const ox = ball.r - Math.abs(dx), oy = ball.r - Math.abs(dy);
+          if (ox < oy) { ball.vx = -ball.vx; ball.x += ball.vx > 0 ? ox : -ox; }
+          else { ball.vy = -ball.vy; ball.y += ball.vy > 0 ? oy : -oy; }
+          if (kill) bl.alive = false;
+          return i;
+        }
+      }
+      return -1;
+    }
+
+    // Hits per second landed by a single ball on a never-breaking full board.
+    function measureHitsPerSecond(seconds, trials) {
+      let total = 0;
+      for (let t = 0; t < trials; t++) {
+        const blocks = makeBlocks();
+        const [ball] = makeBalls(1);
+        let hits = 0;
+        const steps = Math.round(seconds / DT);
+        for (let s = 0; s < steps; s++) if (stepBall(ball, blocks, false) >= 0) hits++;
+        total += hits / seconds;
+      }
+      return total / trials;
+    }
+
+    // Seconds for N balls to clear a one-shot board (every block dies in 1 hit).
+    function measureClearTime(n, trials, maxSeconds) {
+      let total = 0;
+      const maxSteps = Math.round(maxSeconds / DT);
+      for (let t = 0; t < trials; t++) {
+        const blocks = makeBlocks();
+        const balls = makeBalls(n);
+        let remaining = blocks.length, steps = 0;
+        while (remaining > 0 && steps < maxSteps) {
+          for (const ball of balls) { if (stepBall(ball, blocks, true) >= 0) remaining--; }
+          steps++;
+        }
+        total += steps * DT;
+      }
+      return total / trials;
+    }
+
+    // ---- run the measurement (async so the page paints first) ---------------
+    function run() {
+      const w = Math.max(200, parseInt(document.getElementById("inW").value) || 840);
+      const h = Math.max(200, parseInt(document.getElementById("inH").value) || 680);
+      computeLayout(w, h);
+      resetView();
+      document.getElementById("status").textContent = "measuring…";
+
+      const hps1 = measureHitsPerSecond(20, 12);
+      const clear = {};
+      for (let n = 1; n <= 10; n++) clear[n] = measureClearTime(n, 20, 400);
+
+      // Render results table.
+      const rowsHtml = ["<tr><th>Balls</th><th style='text-align:right'>Clear time (s)</th><th style='text-align:right'>Hits/s total</th></tr>"];
+      for (let n = 1; n <= 10; n++) {
+        rowsHtml.push(`<tr><td>${n}</td><td class="num">${clear[n].toFixed(2)}</td><td class="num">${(hps1 * n).toFixed(1)}</td></tr>`);
+      }
+      document.getElementById("results").innerHTML = rowsHtml.join("");
+      document.getElementById("hps").innerHTML =
+        `One ball lands <b>${hps1.toFixed(2)} hits/s</b> on a full board. Balls do not collide with each other, so N balls land ≈ N× that. Grid: <b>${cols}×${rows} = ${NBLOCKS} blocks</b> at ${W}×${H}.`;
+      document.getElementById("status").textContent = "done";
+
+      // Emit stats.js.
+      const sim = {
+        layout: { W, H, cols, rows, cell, ballR: Math.round(ballR * 100) / 100, blocks: NBLOCKS, ballSpeed: speed },
+        hitsPerSecondPerBall: Math.round(hps1 * 1000) / 1000,
+        clearSecondsByBallCount: Object.fromEntries(Object.entries(clear).map(([k, v]) => [k, Math.round(v * 1000) / 1000])),
+      };
+      const text =
+`/*
+ * InfiniClick — simulated layout ratios (generated by simul.html).
+ *
+ * Purely geometric measurements of the CURRENT board layout: how fast balls
+ * physically sweep a board clean. Re-generate whenever the grid or physics
+ * changes. Consumed by stats.html to turn the economy into a time-per-level.
+ */
+window.IC = window.IC || {};
+IC.sim = ${JSON.stringify(sim, null, 2)};
+`;
+      document.getElementById("out").textContent = text;
+      window.__statsJS = text;
+      window.__statsData = sim;
+    }
+
+    // ---- a small looping visual ---------------------------------------------
+    const view = document.getElementById("view");
+    const vctx = view.getContext("2d");
+    let vballs, vblocks, vscale = 1;
+    function resetView() {
+      vblocks = makeBlocks();
+      vballs = makeBalls(6);
+    }
+    resetView();
+    function drawView() {
+      const cssW = view.clientWidth, cssH = view.clientHeight;
+      const dpr = window.devicePixelRatio || 1;
+      if (view.width !== cssW * dpr) { view.width = cssW * dpr; view.height = cssH * dpr; }
+      vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const sx = cssW / W, sy = cssH / H;
+      vctx.clearRect(0, 0, cssW, cssH);
+
+      let remaining = 0;
+      for (const bl of vblocks) {
+        if (!bl.alive) continue;
+        remaining++;
+        const rect = blockRect(bl.r, bl.c);
+        vctx.fillStyle = "#2a3a4d";
+        vctx.fillRect(rect.x * sx, rect.y * sy, rect.w * sx, rect.h * sy);
+      }
+      for (const ball of vballs) { stepBall(ball, vblocks, true); }
+      vctx.fillStyle = "#56d3c9";
+      for (const ball of vballs) {
+        vctx.beginPath();
+        vctx.arc(ball.x * sx, ball.y * sy, ball.r * ((sx + sy) / 2), 0, Math.PI * 2);
+        vctx.fill();
+      }
+      if (remaining === 0) resetView();
+      requestAnimationFrame(drawView);
+    }
+    requestAnimationFrame(drawView);
+
+    // Re-measure on demand; paint "measuring…" first, then run on the next tick.
+    function scheduleRun() {
+      document.getElementById("status").textContent = "measuring…";
+      document.getElementById("out").textContent = "…";
+      setTimeout(run, 60);
+    }
+    document.getElementById("remeasure").addEventListener("click", scheduleRun);
+    scheduleRun();
+  </script>
+</body>
+</html>
