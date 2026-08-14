@@ -49,10 +49,21 @@ IC.economy = {
     return Math.pow(IC.config.COST_GROWTH, blocks) * IC.config.UNIVERSE_COST_MULT;
   },
 
-  // Damage of a single tier-T ball (T = 1 is the only one you can buy).
+  // Base damage of a single tier-T ball (before the global Power multiplier).
   ballDamage(tier) {
     const c = IC.config;
     return c.DMG_BASE * Math.pow(c.MERGE_REQUIRED * c.MERGE_DAMAGE_MULT, tier - 1);
+  },
+
+  // The global damage multiplier from `n` Power upgrades — the exponential lever.
+  powerMultiplier(n) {
+    return Math.pow(IC.config.POWER_MULT, n);
+  },
+
+  // Cost of the next Power upgrade (geometric).
+  powerCost(n) {
+    const c = IC.config;
+    return c.POWER_BASE_COST * Math.pow(c.POWER_COST_GROWTH, n);
   },
 
   // Price of the next level-1 ball, given how many you have ever bought.

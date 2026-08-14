@@ -53,14 +53,20 @@ charts them live. There is a single growth law, not a special per-universe rule.
 - **Shard income** tracks cost: `boardReward(L) = REWARD_RATIO · boardCost(L)`, split
   across the blocks the same way. So income rises at the same `COST_GROWTH^L` rate as
   difficulty; the *ratio* (default 0.6) is the dial for how fast shards accumulate.
-- **Damage growth** comes only from balls right now: buying tier-1 balls (up to ten)
-  and merging. A tier-T ball deals `DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)
-  ^(T-1)` — with the defaults 10 → 200 → 4000 …, i.e. **`MERGE_REQUIRED ·
-  MERGE_DAMAGE_MULT` = 20× per tier**. Because a board's cost grows only `COST_GROWTH`
-  per level, a single merge (20×) buys you ~`ln 20 / ln 1.1 ≈ 31` levels of headroom.
-  That interplay of `COST_GROWTH` vs `MERGE_DAMAGE_MULT` and the ball price is the core
-  of the balance — a smaller `MERGE_DAMAGE_MULT` makes the time-per-level sawtooth
-  (each tooth is a forced merge) shallower.
+- **Damage MUST grow exponentially too — this is the whole game.** Board cost is
+  exponential in the level. Balls alone give only *polynomial* power: ball prices
+  inflate (`BALL_COST_GROWTH`), so you afford ~linearly many balls in the level, and
+  merge tiers grow only logarithmically — `power ≈ level^~1.3`. On a log axis cost is
+  a straight line and balls-only power is a *log curve*: the gap widens forever and
+  the game becomes unwinnable. The fix (Pecorella's rule: production must be
+  exponential) is the **Power upgrade** — a multiplicative `×POWER_MULT` with a
+  geometric cost. You buy ~linearly many in the level, so `POWER_MULT^level` is
+  exponential and tracks the cost line. **Tune `POWER_MULT` / `POWER_COST_GROWTH` so
+  the "ball power" line in `stats.html` runs parallel to cost** — then times are a
+  choice (via `UNIVERSE_COST_MULT`) instead of a runaway. Merging (a tier-T ball is
+  `DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)^(T-1)`, ~20× per tier by default)
+  is a secondary, ZenShards-flavour lever on top; its jumps are the time-per-level
+  sawtooth.
 - **Prestige = ascension.** Finishing a meta-board grants `ascendBonus =
   ASCEND_BONUS_MULT · ballCost(ballsBought)` — deliberately tied to your *ball price*
   rather than to board reward, so the bonus is always worth ~`ASCEND_BONUS_MULT` more

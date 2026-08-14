@@ -41,6 +41,16 @@ IC.config = {
   // A tier-T ball deals DMG_BASE * (MERGE_REQUIRED * MERGE_DAMAGE_MULT) ^ (T-1).
   // With 10 and 3 that is 10 → 300 → 9000 → … : a merged ball is worth 3x the ten
   // balls it consumed, so merging is always the right move (ZenShards-style).
+  // The exponential power source. A shop upgrade that multiplies ALL ball damage.
+  // Its cost is geometric while income is exponential, so you buy ~linearly many
+  // in the global level L — and POWER_MULT^(that) grows EXPONENTIALLY, matching the
+  // exponential board cost (the way an idle economy must). Without it, balls-only
+  // power is only polynomial and the cost line runs away. Tune against the cost
+  // curve in stats.html so "ball power" tracks it.
+  POWER_MULT: 1.08,         // damage ×multiplier per Power upgrade bought
+  POWER_BASE_COST: 50,
+  POWER_COST_GROWTH: 1.3,
+
   DMG_BASE: 10,
   MERGE_REQUIRED: 10,       // balls consumed by one merge (10 -> 1 of the next tier)
   MERGE_DAMAGE_MULT: 2,     // a merged ball is worth this * the balls it consumed

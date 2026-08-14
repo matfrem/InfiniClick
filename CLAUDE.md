@@ -151,22 +151,31 @@ scaled to the canvas) and draws everything through it; the fractal zoom is a cam
 - **Physics** (`ballHitsBlock`) — circle/rectangle collision on the axis of least penetration; reflects the ball and, when asked, chips the block (during a hunt it just reports which block was touched so the game can dive in).
 - **Economy** (`breakBlock`, `damageBlock`) — applies damage and pays out each block's pre-computed reward share; all the *numbers* come from `E`.
 - **Update / Rendering** — one update branch per phase; `drawBoard` maps a board into any screen rect (the zoom is an interpolated camera), plus `drawInterlude` for the between-universe screen.
-- **Shop** (`buyBall`, `renderShop`, `renderBallBar`) — the single Extra-Ball purchase and the ball banner with merge buttons.
+- **Shop** (`buyBall`, `buyPower`, `renderShop`, `renderBallBar`) — the Extra-Ball and Power purchases and the ball banner with merge buttons.
 - **Persistence** (`save`, `load`, `resetGame`) — auto-saves to `localStorage` (`C.SAVE_KEY`, currently `…v3`); `resetGame` wipes the save *and* every scrap of live state.
 - **Loop** (`frame`) — `requestAnimationFrame` with a clamped `dt`.
 
 ## Shop
 
-For now the only purchase is **Extra Ball** (a tier-1 ball, capped at twenty), and the
-only other action is **merging** ten balls of a tier into one of the next. Everything
-else — damage, income — is derived from balls, merges and how deep you have climbed.
-More upgrades can be re-introduced later; they belong in `config.js`/`economy.js`.
+Two purchases: **Extra Ball** (a tier-1 ball, capped at twenty) and **Power**, a
+global multiplicative damage upgrade (`×POWER_MULT` per buy, geometric cost). Plus
+**merging** ten balls of a tier into one of the next.
+
+**Power is the exponential lever, and it is not optional maths.** Board cost grows
+exponentially in the level; balls alone give only *polynomial* damage (ball prices
+inflate, so you afford ~linearly many, and merge tiers grow logarithmically) — so a
+balls-only economy diverges: cost outruns power forever. A multiplicative upgrade
+bought ~linearly in the level makes `POWER_MULT^level` **exponential**, matching the
+cost curve (see `stats.html`: the "ball power" line then runs parallel to the cost
+line). Tune `POWER_MULT` / `POWER_COST_GROWTH` so power tracks cost; then
+`UNIVERSE_COST_MULT` sets how much *harder* each successive universe is.
 
 ## Quick customization
 
 - **Everything balance-related**: `config.js`. Board HP curve (`HP_BASE`,
   `COST_GROWTH`, `UNIVERSE_COST_MULT`), reward (`REWARD_RATIO`), ascension bonus
-  (`ASCEND_BONUS_MULT`), ball
+  (`ASCEND_BONUS_MULT`), the Power upgrade (`POWER_MULT`, `POWER_BASE_COST`,
+  `POWER_COST_GROWTH`), ball
   damage/merge (`DMG_BASE`, `MERGE_REQUIRED`, `MERGE_DAMAGE_MULT`, `SIM_MERGE_AT`), ball
   price (`BALL_BASE_COST`, `BALL_COST_GROWTH`), cap (`LEVEL1_CAP`), feel (`ZOOM_DUR`,
   `HUNT_GRACE`, `ASCEND_DUR`), grid (`GRID_COLS`, `GRID_ROWS`), ball speed

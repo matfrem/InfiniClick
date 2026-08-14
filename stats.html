@@ -101,18 +101,23 @@
     // each level it records the resulting loadout (ball count + total damage).
     const MERGE_AT = C.SIM_MERGE_AT || C.MERGE_REQUIRED;
     function greedyLoadout(lmax) {
-      let shards = 0, bought = 0;
+      let shards = 0, bought = 0, powerLevel = 0;
       const balls = { 1: 1 };   // the one free starting ball
       const out = [];
+      // Spend every shard, always buying the CHEAPER of {next ball, next Power
+      // upgrade}, and merging along the way. Power is the exponential lever.
       function spend() {
         let changed = true;
         while (changed) {
           changed = false;
-          if ((balls[1] || 0) < C.LEVEL1_CAP && shards >= E.ballCost(bought)) {
-            shards -= E.ballCost(bought); bought++; balls[1] = (balls[1] || 0) + 1; changed = true;
+          const ballCost = (balls[1] || 0) < C.LEVEL1_CAP ? E.ballCost(bought) : Infinity;
+          const powCost = E.powerCost(powerLevel);
+          const cheapest = Math.min(ballCost, powCost);
+          if (cheapest <= shards && cheapest < Infinity) {
+            if (ballCost <= powCost) { shards -= ballCost; bought++; balls[1] = (balls[1] || 0) + 1; }
+            else { shards -= powCost; powerLevel++; }
+            changed = true;
           }
-          // Merge only once a tier reaches MERGE_AT (15), consuming MERGE_REQUIRED
-          // (10) — so it drops 15 -> 6, never 10 -> 1, smoothing the curve.
           for (const t of Object.keys(balls).map(Number)) {
             while ((balls[t] || 0) >= MERGE_AT) {
               balls[t] -= C.MERGE_REQUIRED; balls[t + 1] = (balls[t + 1] || 0) + 1; changed = true;
@@ -122,9 +127,10 @@
       }
       for (let L = 0; L <= lmax; L++) {
         spend();
-        let N = 0, dmg = 0;
-        for (const t of Object.keys(balls).map(Number)) { N += balls[t]; dmg += balls[t] * E.ballDamage(t); }
-        out.push({ L, N, dmg, bought });
+        let N = 0, base = 0;
+        for (const t of Object.keys(balls).map(Number)) { N += balls[t]; base += balls[t] * E.ballDamage(t); }
+        const dmg = base * E.powerMultiplier(powerLevel);
+        out.push({ L, N, dmg, bought, powerLevel });
         shards += E.boardReward(L);
         if ((L + 1) % BLOCKS === 0) shards += E.ascendBonus(bought);
       }
@@ -167,6 +173,8 @@
       ["UNIVERSE_COST_MULT", "Universe difficulty ×", 0.5],
       ["REWARD_RATIO", "Reward ratio", 0.05],
       ["ASCEND_BONUS_MULT", "Ascend bonus ×", 0.5],
+      ["POWER_MULT", "Power upgrade ×", 0.01],
+      ["POWER_COST_GROWTH", "Power cost growth", 0.01],
       ["DMG_BASE", "Ball tier-1 damage", 1],
       ["MERGE_DAMAGE_MULT", "Merge damage ×", 0.5],
       ["BALL_BASE_COST", "Ball base cost", 10],

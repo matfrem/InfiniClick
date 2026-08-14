@@ -32,6 +32,7 @@
     universe: 1,          // universes finished (HUD "Meta"); advances on ascension
     ballCounts: { 1: 1 }, // tier -> number of balls owned
     ballsBought: 0,       // total tier-1 balls ever bought (prices the next one)
+    powerLevel: 0,        // Power upgrades bought (global damage multiplier)
   });
 
   const state = DEFAULT_STATE();
@@ -149,7 +150,7 @@
   // ---------------------------------------------------------------------------
   // Balls (tiered: a tier-T ball deals economy.ballDamage(T))
   // ---------------------------------------------------------------------------
-  function ballDamageOf(ball) { return E.ballDamage(ball.level); }
+  function ballDamageOf(ball) { return E.ballDamage(ball.level) * E.powerMultiplier(state.powerLevel); }
 
   function makeBall(tier) {
     const angle = Math.random() * TAU;
@@ -726,7 +727,7 @@
       if (!block.alive) continue;
       const b = LAY.brickRect(block.r, block.c);
       if (pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h) {
-        if (runtime.phase === "play") damageBlock(block, E.ballDamage(1), pt.x, pt.y);
+        if (runtime.phase === "play") damageBlock(block, E.ballDamage(1) * E.powerMultiplier(state.powerLevel), pt.x, pt.y);
         else startZoomIn(i);
         hideHint();
         return;
@@ -782,35 +783,61 @@
     updateHud();
   }
 
-  function renderShop() {
-    shopEl.innerHTML = "";
-    const count = ballCount1();
-    const capped = count >= C.LEVEL1_CAP;
-    const cost = E.ballCost(state.ballsBought);
-    const affordable = !capped && state.fragments >= cost;
+  function buyPower() {
+    const cost = E.powerCost(state.powerLevel);
+    if (state.fragments < cost) return;
+    state.fragments -= cost;
+    state.powerLevel += 1;
+    save();
+    renderShop();
+    renderBallBar();
+    updateHud();
+  }
 
+  function shopCard(name, level, desc, costText, affordable, onClick) {
     const btn = document.createElement("button");
     btn.className = "upgrade" + (affordable ? " affordable" : "");
     btn.disabled = !affordable;
     btn.innerHTML = `
-      <div class="u-head">
-        <span class="u-name">Extra Ball</span>
-        <span class="u-level">${count} / ${C.LEVEL1_CAP}</span>
-      </div>
-      <div class="u-desc">A tier-1 ball dealing ${E.formatNum(E.ballDamage(1))} damage. Merge ten into a stronger one.</div>
-      <div class="u-cost">${capped ? "Max " + C.LEVEL1_CAP + " — merge them" : E.formatNum(cost)}</div>
+      <div class="u-head"><span class="u-name">${name}</span><span class="u-level">${level}</span></div>
+      <div class="u-desc">${desc}</div>
+      <div class="u-cost">${costText}</div>
     `;
-    btn.addEventListener("click", buyBall);
-    shopEl.appendChild(btn);
+    btn.addEventListener("click", onClick);
+    return btn;
+  }
+
+  function renderShop() {
+    shopEl.innerHTML = "";
+
+    const count = ballCount1();
+    const capped = count >= C.LEVEL1_CAP;
+    const ballCost = E.ballCost(state.ballsBought);
+    const ball1dmg = E.ballDamage(1) * E.powerMultiplier(state.powerLevel);
+    shopEl.appendChild(shopCard(
+      "Extra Ball", `${count} / ${C.LEVEL1_CAP}`,
+      `A tier-1 ball dealing ${E.formatNum(ball1dmg)} damage. Merge ten into a stronger one.`,
+      capped ? "Max " + C.LEVEL1_CAP + " — merge them" : E.formatNum(ballCost),
+      !capped && state.fragments >= ballCost, buyBall));
+
+    const pCost = E.powerCost(state.powerLevel);
+    shopEl.appendChild(shopCard(
+      "Power", `×${E.powerMultiplier(state.powerLevel).toFixed(2)}`,
+      `+${Math.round((C.POWER_MULT - 1) * 100)}% damage to every ball.`,
+      E.formatNum(pCost),
+      state.fragments >= pCost, buyPower));
   }
 
   function refreshShop() {
-    const card = shopEl.firstElementChild;
-    if (!card) return;
+    const cards = shopEl.children;
+    if (cards.length < 2) return;
     const capped = ballCount1() >= C.LEVEL1_CAP;
-    const affordable = !capped && state.fragments >= E.ballCost(state.ballsBought);
-    card.disabled = !affordable;
-    card.classList.toggle("affordable", affordable);
+    const ballAff = !capped && state.fragments >= E.ballCost(state.ballsBought);
+    cards[0].disabled = !ballAff;
+    cards[0].classList.toggle("affordable", ballAff);
+    const pAff = state.fragments >= E.powerCost(state.powerLevel);
+    cards[1].disabled = !pAff;
+    cards[1].classList.toggle("affordable", pAff);
   }
 
   // ---------------------------------------------------------------------------
@@ -829,13 +856,14 @@
       const count = state.ballCounts[tier];
       const color = C.BALL_COLORS[(tier - 1) % C.BALL_COLORS.length];
 
+      const dmg = E.ballDamage(tier) * E.powerMultiplier(state.powerLevel);
       const chip = document.createElement("div");
       chip.className = "ballchip";
       chip.innerHTML = `
         <span class="dot" style="background:${color}; color:${color}"></span>
         <span class="lv">Lv ${tier}</span>
         <span class="ct">×${count}</span>
-        <span class="dmg">${E.formatNum(E.ballDamage(tier))} dmg</span>
+        <span class="dmg">${E.formatNum(dmg)} dmg</span>
       `;
       if (count >= C.MERGE_REQUIRED) {
         const btn = document.createElement("button");
@@ -905,6 +933,7 @@
         universe: state.universe,
         ballCounts: state.ballCounts,
         ballsBought: state.ballsBought,
+        powerLevel: state.powerLevel,
       }));
     } catch (_) { /* storage unavailable — play unsaved */ }
   }
@@ -919,6 +948,7 @@
         level: data.level ?? 0,
         universe: data.universe ?? 1,
         ballsBought: data.ballsBought ?? 0,
+        powerLevel: data.powerLevel ?? 0,
       });
       if (data.ballCounts && Object.keys(data.ballCounts).length) {
         state.ballCounts = {};
