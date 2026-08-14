@@ -204,8 +204,24 @@ html, body {
 .upgrade.affordable .u-cost::before { content: "◈ "; }
 .upgrade:not(.affordable) .u-cost { color: var(--danger); }
 
-#reset {
+.shop-links {
   margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.shop-links a {
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 10px 0;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+.shop-links a:hover { color: var(--accent-2); }
+
+#reset {
+  flex: 1;
   padding: 10px;
   font: inherit;
   font-size: 12px;

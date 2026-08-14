@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InfiniClick — Economy</title>
+  <style>
+    :root {
+      --bg: #0d1117; --panel: #131a24; --panel-2: #182230; --line: #223041;
+      --text: #e6edf3; --muted: #8b98a5; --accent: #56d3c9; --accent-2: #8a7dff;
+      --gold: #ffcf6b; --danger: #ff6b81;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
+      font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+      padding: 20px; -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin: 24px 0 10px; }
+    .sub { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+    .wrap { max-width: 1000px; margin: 0 auto; }
+    .panel { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+    .controls { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+    .ctrl { display: flex; flex-direction: column; gap: 4px; }
+    .ctrl label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .ctrl input {
+      font: inherit; font-size: 14px; color: var(--text); background: var(--bg);
+      border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+    }
+    .ctrl input:focus { outline: none; border-color: var(--accent); }
+    canvas { width: 100%; display: block; border-radius: 10px; }
+    .charts { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--gold); }
+    .row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .note { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+    code { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="row">
+      <div>
+        <h1>InfiniClick — Economy</h1>
+        <p class="sub">Live curves from the same <code>economy.js</code> the game runs. Tune the knobs; nothing here is saved — copy values you like into <code>config.js</code>.</p>
+      </div>
+      <a href="index.html">← Back to game</a>
+    </div>
+
+    <h2>Knobs</h2>
+    <div class="panel">
+      <div class="controls" id="controls"></div>
+      <p class="note">A universe spans <b><span id="blocksNote">?</span> levels</b> (your current grid), so the difficulty multiplier from one universe to the next is <code>COST_GROWTH ^ blocks</code> = <b><span id="uniMult">?</span>×</b>. That is where the old hard-coded “×10 per universe” now comes from — tune <code>COST_GROWTH</code> (or the grid size) to move it.</p>
+    </div>
+
+    <h2>Board cost vs reward, per level</h2>
+    <div class="panel charts">
+      <canvas id="chartCost" height="320"></canvas>
+    </div>
+
+    <h2>Ball economy</h2>
+    <div class="panel charts">
+      <canvas id="chartBalls" height="300"></canvas>
+      <p class="note">A tier-T ball deals <code>DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)^(T−1)</code>. With the defaults that is 10 → 300 → 9000 …: a merged ball is worth 3× the ten balls it consumed, so merging always pays off. Ball price climbs with the total ever bought.</p>
+    </div>
+
+    <h2>Key numbers</h2>
+    <div class="panel">
+      <table id="summary"></table>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="economy.js"></script>
+  <script>
+    const C = window.IC.config;
+    const E = window.IC.economy;
+
+    // How many blocks a board has at a typical desktop size — used to derive the
+    // per-universe multiplier. Purely informational here.
+    let BLOCKS = 40;
+    const LMAX = 140;   // levels to plot
+    const TMAX = 8;     // ball tiers to plot
+    const NMAX = 100;   // ball purchases to plot
+
+    // Controls: [configKey, label, step]
+    const KNOBS = [
+      ["HP_BASE", "HP base", 10],
+      ["COST_GROWTH", "Cost growth /level", 0.01],
+      ["REWARD_RATIO", "Reward ratio", 0.05],
+      ["ASCEND_BONUS_MULT", "Ascend bonus ×", 0.5],
+      ["DMG_BASE", "Ball tier-1 damage", 1],
+      ["MERGE_DAMAGE_MULT", "Merge damage ×", 0.5],
+      ["BALL_BASE_COST", "Ball base cost", 10],
+      ["BALL_COST_GROWTH", "Ball cost growth", 0.01],
+    ];
+
+    const controlsEl = document.getElementById("controls");
+    for (const [key, label, step] of KNOBS) {
+      const wrap = document.createElement("div");
+      wrap.className = "ctrl";
+      wrap.innerHTML = `<label>${label}</label><input type="number" step="${step}" value="${C[key]}" data-key="${key}">`;
+      controlsEl.appendChild(wrap);
+    }
+    controlsEl.addEventListener("input", (e) => {
+      const key = e.target.dataset.key;
+      if (!key) return;
+      const v = parseFloat(e.target.value);
+      if (isFinite(v)) { C[key] = v; redraw(); }
+    });
+
+    // ---- a small log-Y line chart -------------------------------------------
+    function drawChart(canvas, series, opts) {
+      const dpr = window.devicePixelRatio || 1;
+      const cssW = canvas.clientWidth || 900;
+      const cssH = opts.height || 320;
+      canvas.width = cssW * dpr;
+      canvas.height = cssH * dpr;
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
+
+      const padL = 62, padR = 16, padT = 14, padB = 34;
+      const plotW = cssW - padL - padR;
+      const plotH = cssH - padT - padB;
+
+      // Y range in log10 across all series (values must be > 0).
+      let lo = Infinity, hi = -Infinity;
+      for (const s of series) for (const p of s.points) {
+        if (p.y > 0) { const l = Math.log10(p.y); if (l < lo) lo = l; if (l > hi) hi = l; }
+      }
+      if (!isFinite(lo)) { lo = 0; hi = 1; }
+      lo = Math.floor(lo); hi = Math.ceil(hi);
+      if (hi <= lo) hi = lo + 1;
+
+      const xMin = opts.xMin, xMax = opts.xMax;
+      const xToPx = (x) => padL + (plotW * (x - xMin)) / (xMax - xMin || 1);
+      const yToPx = (y) => padT + plotH - (plotH * (Math.log10(y) - lo)) / (hi - lo);
+
+      // Horizontal gridlines at each power of 10.
+      ctx.font = "11px Inter, system-ui, sans-serif";
+      ctx.textBaseline = "middle";
+      for (let e = lo; e <= hi; e++) {
+        const y = padT + plotH - (plotH * (e - lo)) / (hi - lo);
+        ctx.strokeStyle = "#1c2937";
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke();
+        ctx.fillStyle = "#8b98a5"; ctx.textAlign = "right";
+        ctx.fillText(E.formatNum(Math.pow(10, e)), padL - 8, y);
+      }
+      // Vertical gridlines / X ticks.
+      ctx.textAlign = "center"; ctx.textBaseline = "top";
+      const ticks = 7;
+      for (let i = 0; i <= ticks; i++) {
+        const x = xMin + ((xMax - xMin) * i) / ticks;
+        const px = xToPx(x);
+        ctx.strokeStyle = "#162230";
+        ctx.beginPath(); ctx.moveTo(px, padT); ctx.lineTo(px, padT + plotH); ctx.stroke();
+        ctx.fillStyle = "#8b98a5";
+        ctx.fillText(Math.round(x), px, padT + plotH + 8);
+      }
+      ctx.fillStyle = "#8b98a5"; ctx.textAlign = "center";
+      ctx.fillText(opts.xLabel || "", padL + plotW / 2, cssH - 12);
+
+      // Series lines.
+      for (const s of series) {
+        ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.beginPath();
+        let started = false;
+        for (const p of s.points) {
+          if (p.y <= 0) continue;
+          const px = xToPx(p.x), py = yToPx(p.y);
+          if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+
+      // Legend.
+      let ly = padT + 4;
+      ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.font = "600 12px Inter, system-ui, sans-serif";
+      for (const s of series) {
+        ctx.fillStyle = s.color;
+        ctx.fillRect(padL + 10, ly, 14, 3);
+        ctx.fillStyle = "#e6edf3";
+        ctx.fillText(s.label, padL + 30, ly + 1);
+        ly += 18;
+      }
+    }
+
+    function redraw() {
+      // Board cost vs reward across levels.
+      const cost = [], reward = [];
+      for (let L = 0; L <= LMAX; L++) {
+        cost.push({ x: L, y: E.boardCost(L) });
+        reward.push({ x: L, y: E.boardReward(L) });
+      }
+      drawChart(document.getElementById("chartCost"), [
+        { label: "Board cost (HP)", color: "#ff8fab", points: cost },
+        { label: "Board reward (shards)", color: "#56d3c9", points: reward },
+      ], { xMin: 0, xMax: LMAX, xLabel: "level", height: 320 });
+
+      // Ball economy: damage per tier + price per purchase (shared log axis).
+      const dmg = [], price = [];
+      for (let t = 1; t <= TMAX; t++) dmg.push({ x: t, y: E.ballDamage(t) });
+      for (let n = 0; n <= NMAX; n++) price.push({ x: 1 + (TMAX - 1) * (n / NMAX), y: E.ballCost(n) });
+      drawChart(document.getElementById("chartBalls"), [
+        { label: "Ball damage by tier (1…" + TMAX + ")", color: "#ffcf6b", points: dmg },
+        { label: "Ball price by #bought (0…" + NMAX + ", rescaled)", color: "#8a7dff", points: price },
+      ], { xMin: 1, xMax: TMAX, xLabel: "tier  /  purchases (rescaled)", height: 300 });
+
+      // Derived summary.
+      document.getElementById("blocksNote").textContent = BLOCKS;
+      document.getElementById("uniMult").textContent = E.universeMultiplier(BLOCKS).toFixed(1);
+
+      const rows = [
+        ["Board cost @ level 0", E.formatNum(E.boardCost(0))],
+        ["Board cost @ level 24", E.formatNum(E.boardCost(24))],
+        ["Board cost @ level 100", E.formatNum(E.boardCost(100))],
+        ["Reward @ level 24", E.formatNum(E.boardReward(24))],
+        ["Universe multiplier (÷ per " + BLOCKS + " levels)", E.universeMultiplier(BLOCKS).toFixed(2) + "×"],
+        ["Ball damage — tier 1 / 2 / 3", E.formatNum(E.ballDamage(1)) + " / " + E.formatNum(E.ballDamage(2)) + " / " + E.formatNum(E.ballDamage(3))],
+        ["Ball price — 1st / 11th / 21st", E.formatNum(E.ballCost(0)) + " / " + E.formatNum(E.ballCost(10)) + " / " + E.formatNum(E.ballCost(20))],
+        ["Ascension bonus @ level 24", E.formatNum(E.ascendBonus(24))],
+      ];
+      const t = document.getElementById("summary");
+      t.innerHTML = "<tr><th>Metric</th><th style='text-align:right'>Value</th></tr>" +
+        rows.map(([k, v]) => `<tr><td>${k}</td><td class="num">${v}</td></tr>`).join("");
+    }
+
+    window.addEventListener("resize", redraw);
+    redraw();
+  </script>
+</body>
+</html>

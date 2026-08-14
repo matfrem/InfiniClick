@@ -34,36 +34,46 @@ band (a few seconds early, tens of seconds mid-game). If it balloons, lower
 
 ## InfiniClick's specific structure
 
-- **HP curve.** A board of rank *R* has blocks with `base · HP_PER_META^R` HP
-  (`HP_PER_META = 10`). So difficulty is **×10 per meta rank** — a deliberately
-  steep, prestige-like wall between universes.
-- **Shard income** scales with the HP you destroy (`reward = maxHp · 2 · yieldMul`),
-  so income *also* rises ~10× per rank. That means upgrade costs (which grow only
-  by `growth^n`) become relatively cheap at higher ranks — the intended pressure
-  valve that lets you buy many small upgrades to break the next wall.
-- **Damage growth** is multiplicative and small (Ball Power ×1.08/level). To gain a
-  full 10× (one rank) you need ~`ln 10 / ln 1.08 ≈ 30` levels of Ball Power — plus
-  ball merges (a level-N ball deals N× damage) and more balls. That ~30-level reach
-  per rank is the core grind knob: raise the 1.08 to soften it, lower it to harden.
-- **Prestige = ascension.** Finishing a whole meta-board and climbing a rank is the
-  prestige loop. Classic prestige math (Pecorella, Part III) applies: the reward for
-  ascending should be worth roughly the time it took, so each universe feels like a
-  fresh, faster run rather than a slog.
+All of these live in `config.js`; the formulas are in `economy.js`; `stats.html`
+charts them live. There is a single growth law, not a special per-universe rule.
 
-### Knobs, and which direction to turn them
+- **HP curve.** A board (one "level") has a total cost `boardCost(L) = HP_BASE ·
+  COST_GROWTH^L`, split across its blocks by weight so the *count and shape* of the
+  blocks are free to change without moving the metric. `L` is the global level index,
+  bumped by one every board you clear.
+- **No hard ×10.** A universe is one meta-board spanning `blocks` levels, so its
+  difficulty multiplier vs the one below is `COST_GROWTH^blocks`. With `1.1` and ~24
+  blocks that is ≈ 9.85 — the old “×10 per universe” now *emerges* from the growth
+  law. `economy.universeMultiplier(blocks)` reports it; `stats.html` shows it live.
+- **Shard income** tracks cost: `boardReward(L) = REWARD_RATIO · boardCost(L)`, split
+  across the blocks the same way. So income rises at the same `COST_GROWTH^L` rate as
+  difficulty; the *ratio* (default 0.6) is the dial for how fast shards accumulate.
+- **Damage growth** comes only from balls right now: buying tier-1 balls (up to ten)
+  and merging. A tier-T ball deals `DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)
+  ^(T-1)` — 10 → 300 → 9000 …, i.e. **30× per tier**. Because a board's cost grows
+  only `COST_GROWTH` per level, a single merge (30×) buys you ~`ln 30 / ln 1.1 ≈ 36`
+  levels of headroom. That interplay of `COST_GROWTH` vs `MERGE_DAMAGE_MULT` and the
+  ball price is the core of the balance.
+- **Prestige = ascension.** Finishing a meta-board grants `ascendBonus(L) =
+  ASCEND_BONUS_MULT · boardReward(L)`. Classic prestige math (Pecorella, Part III)
+  applies: make the bonus worth roughly the time the universe took.
+
+### Knobs, and which direction to turn them (all in `config.js`)
 
 | Symptom                                   | Turn this                                            |
 |-------------------------------------------|------------------------------------------------------|
-| Early game too slow / grindy              | ↓ `makeBlock` base HP, ↑ starting balls, ↓ `growth`  |
-| Upgrades feel pointless                   | ↑ damage step (1.08 → 1.12), ↑ merge payoff          |
-| Ranks fall too fast (no wall)             | ↑ `HP_PER_META`, ↑ meta grid size (`target` in `layoutGrid`) |
-| Ranks are an impossible wall             | ↓ `HP_PER_META`, ↓ damage-upgrade `growth`           |
+| Early game too slow / grindy              | ↓ `HP_BASE`, ↓ `COST_GROWTH`, ↓ `BALL_BASE_COST`     |
+| Shards pile up too fast / too slow        | `REWARD_RATIO`                                        |
+| Merging feels weak / mandatory-but-dull   | `MERGE_DAMAGE_MULT` (payoff per merge)               |
+| Universes fall too fast (no wall)         | ↑ `COST_GROWTH`, or a bigger grid (`GRID_TARGET`)    |
+| Universes are an impossible wall          | ↓ `COST_GROWTH`, ↓ `BALL_COST_GROWTH`                |
+| Ascension feels unrewarding               | ↑ `ASCEND_BONUS_MULT`                                |
 | Numbers explode past readability          | already handled by `formatNum`; tune, don't fear it  |
 | Meta phase flashes by                     | ↑ `HUNT_GRACE`                                        |
 
-A spreadsheet beats intuition here: put rank on rows, and columns for block HP,
-board clear-time at a given DPS, shard income, and cumulative upgrade cost. Pecorella
-ships exactly such worksheets (linked below) — copy their structure.
+`stats.html` *is* the spreadsheet: it plots board cost, board reward, ball damage and
+ball price straight from `economy.js`, and lets you drag the knobs before you commit
+them to `config.js`. Pecorella's worksheets (below) inspired the approach.
 
 ## References
 

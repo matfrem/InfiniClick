@@ -20,9 +20,10 @@ every block hides a whole board of its own.
    blocks so it feels alive), then the next block one touches — or one you click —
    is the one the camera **zooms into**, revealing a fresh board to clear.
 6. Clearing **every** block of a meta-board **ascends** you to the next universe:
-   a black "accessing upper universe level N…" interlude, then a fresh board one
-   whole rank tougher (10× the HP), with one block pre-destroyed.
-7. Shards buy upgrades that speed up the harvest. Back to step 1, deeper or higher.
+   a black "accessing upper universe level N…" interlude and a bonus, then a fresh
+   board with one block pre-destroyed.
+7. Shards buy **balls** (and merges make them stronger), which speed up the
+   harvest. Back to step 1, deeper or higher.
 
 ## Infinity, without an infinite stack
 
@@ -34,30 +35,54 @@ board with one block pre-destroyed), so the climb upward is endless but memory i
 constant. The meta phase uses the exact same board, blocks, balls and rendering as
 the normal phase — it *is* the same game, only zoomed.
 
-## Meta ranks, difficulty & big numbers
+## One economy, two shared files
 
-Difficulty is measured in **meta ranks**. A board of rank *R* has blocks with
-**10× the HP** of a board of rank *R−1* (`HP_PER_META`), so every notch up the
-fractal is ten times tougher. The `Meta` stat in the HUD is your current universe
-(`state.metaLevel`) — the true progression — and it only advances when you finish a
-whole meta-board and **ascend** through the "accessing upper universe" interlude.
-A sub-board you clear sits at rank `metaLevel − 1`; the meta-board above it is rank
-`metaLevel`.
+All the tunable numbers live in **`config.js`** and all the formulas that turn them
+into HP / rewards / damage live in **`economy.js`**. Both the game (`game.js`) and
+the economy dashboard (`stats.html`) read these same two files, so the charts always
+plot exactly what the game charges. To rebalance, edit `config.js` — nothing else.
 
-Because HP (and therefore shard rewards) grow 10× per rank, the numbers get large
-quickly. They are plain JS **floats** (exact to ~1e15, valid to ~1e308), rendered by
-`formatNum` as integers → `K`/`M`/`B` → scientific (`1.23e18`). No BigInt: for a
-clicker the lost integer precision past a quadrillion is invisible on screen. See
-`docs/idle-game-tuning.md` for the growth math and how to rebalance the ratios.
+## Difficulty: one growth law, cost split across blocks
 
-## Balls & levels
+Progression is a single **global level index** `state.level` — every board you clear
+bumps it by one. A board's **total** HP is one number,
 
-Balls come in **levels**. A level-N ball deals N times the base damage. Buying the
-*Extra Ball* upgrade always adds a **level-1** ball — the only ones you can buy —
-and you may hold at most **ten** of them (`LEVEL1_CAP`); past that you must merge.
-Collect ten balls of the same level and **merge** them (button in the ball banner
-above the shop) into a single ball of the next level, ZenShards-style. Higher-level
-balls are bigger, brighter, and stamped with their level.
+```
+boardCost(L) = HP_BASE · COST_GROWTH^L
+```
+
+and that total is **divided across its blocks by weight** (so the sum of the block
+HP equals `boardCost`). The reward for a whole board (`boardReward = REWARD_RATIO ·
+boardCost`) is split the same way. This decouples the metrics from the *number and
+shape* of the blocks — you can change the grid freely without touching the balance.
+
+There is **no hard-coded "×10 per universe"** any more. A universe spans one
+meta-board (≈ `blocks` levels), so its difficulty multiplier vs the one below is
+simply `COST_GROWTH^blocks` — with `1.1` and ~24 blocks that lands near ×10 on its
+own. `universeCost` / `universeMultiplier` in `economy.js` derive it. The `Meta` stat
+in the HUD is `state.universe` (how many you have finished); it advances only on
+**ascension**, which also grants a bonus (`ascendBonus`).
+
+Because costs grow exponentially the numbers get large; they are plain JS **floats**
+(exact to ~1e15, valid to ~1e308), rendered by `economy.formatNum` as integers →
+`K`/`M`/`B` → scientific (`1.23e18`). No BigInt — the lost integer precision past a
+quadrillion is invisible on screen. Open `stats.html` to see the curves and tune the
+ratios live; `docs/idle-game-tuning.md` explains the math.
+
+## Balls & tiers
+
+Balls come in **tiers**. Buying an **Extra Ball** always adds a **tier-1** ball — the
+only ones you can buy — and you may hold at most **ten** (`LEVEL1_CAP`); past that you
+must merge. Ten balls of a tier **merge** (button in the ball banner) into one of the
+next tier. Damage rises steeply per tier,
+
+```
+ballDamage(T) = DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)^(T-1)   // 10, 300, 9000, …
+```
+
+so a merged ball is worth 3× the ten balls it consumed (ZenShards-style) — merging is
+always the right move. The next tier-1 ball is priced `BALL_BASE_COST ·
+BALL_COST_GROWTH^(balls ever bought)`.
 
 ## Running the game
 
@@ -75,58 +100,55 @@ python3 -m http.server 8000
 |--------------|-------------------------------------------------------------------|
 | `index.html` | Page structure: stat bar, canvas, shop.                           |
 | `style.css`  | Dark "zen" theme, layout and shop styling.                        |
-| `game.js`    | All the logic: physics, rendering, economy, upgrades, saving.     |
+| `config.js`  | Every tunable knob (`IC.config`) — the one place to rebalance.     |
+| `economy.js` | Pure formulas (`IC.economy`) shared by the game and the stats page.|
+| `game.js`    | The game itself: physics, rendering, the fractal state machine, saving. |
+| `stats.html` | Economy dashboard: live cost/reward curves from `economy.js`.     |
 | `docs/`      | `idle-game-tuning.md`: incremental-game balance theory & knobs.   |
 | `CLAUDE.md`  | This document.                                                    |
 
-## Architecture of `game.js`
+## Architecture
 
-The code lives inside an IIFE (no global variables) and is split into sections:
+`config.js` sets `window.IC.config` (data) and `economy.js` sets `window.IC.economy`
+(pure formulas) — loaded, in that order, before `game.js`. The game reads both as
+`C` and `E`. `stats.html` loads the same two files and nothing else of the game.
 
-- **`state`** — persisted progress (shards, `metaLevel`, ball counts per level, upgrade levels, multipliers). `DEFAULT_STATE()` is the single source of truth for a fresh game, used both at boot and by the reset button.
+`game.js` lives inside an IIFE (no globals of its own) and is split into sections:
+
+- **`state`** — persisted progress: `fragments`, the global `level`, the `universe` count, `ballCounts` per tier, and `ballsBought`. `DEFAULT_STATE()` is the single source of truth for a fresh game, used at boot and by reset.
 - **`runtime`** — ephemeral, unsaved data: the active `board`, its `parent` meta-board, the current `phase`, an in-flight zoom `anim`, the ascension `interlude`/`pending`, plus balls, particles, floating texts and the banner.
-- **Formatting** (`formatNum`, `paletteFor`) — big-number display and the per-rank colour palette.
-- **Grid** (`layoutGrid`, `makeBlock`, `makeBoard`, `pickPortal`, `blockRect`, `cellRectOf`) — lays out blocks responsively and builds whole boards of a given **rank** (HP scales 10× per rank).
+- **Grid** (`layoutGrid`, `makeBoard`, `pickPortal`, `blockRect`, `cellRectOf`) — lays out blocks responsively and builds whole boards, splitting `E.boardCost(level)` and `E.boardReward(level)` across the blocks by weight.
 - **Boards & phases** (`ensureBoards`, `boardCleared`, `startZoomOut`/`completeZoomOut`, `startZoomIn`/`completeZoomIn`, `startAscension`/`completeAscension`) — the fractal state machine (`play` → `zoomOut` → `hunt` → `zoomIn` → `play`, plus `ascend` between universes).
-- **Balls** (`makeBall`, `syncBalls`, `placeBalls`, `mergeBalls`, `ballDamageOf`) — levelled balls, merging, and repositioning after a zoom.
-- **Physics** (`ballHitsBlock`) — circle/rectangle collision resolved on the axis of least penetration; reflects the ball and, when asked, chips the block (during a hunt it just reports which block was touched so the game can dive in).
-- **Economy** (`breakBlock`, `damageBlock`) — damage, shard rewards, visual effects.
-- **Update** (`update`, `updatePlay`, `updateHunt`, `updateZoom`, `updateAscension`, `updateEffects`) — one branch per phase.
-- **Rendering** (`render`, `drawBoard`, `drawInterlude`, `cellFillRect`, `lerpRect`) — draws a board mapped into any screen rect (the zoom is just an interpolated camera between "full screen" and "one cell fills the screen"), plus the between-universe interlude.
-- **Shop** (`UPGRADES`, `costOf`, `buy`, `renderShop`, `renderBallBar`) — geometric-cost upgrades (Extra Ball priced by current level-1 count) and the ball banner.
-- **Persistence** (`save`, `load`, `resetGame`) — auto-saves to `localStorage` (key `infiniclick.save.v2`); `resetGame` wipes the save *and* every scrap of live state before rebuilding.
-- **Loop** (`frame`) — `requestAnimationFrame` with a clamped `dt` to stay stable after a tab switch.
+- **Balls** (`makeBall`, `syncBalls`, `placeBalls`, `mergeBalls`, `ballDamageOf`) — tiered balls, merging, and repositioning after a zoom.
+- **Physics** (`ballHitsBlock`) — circle/rectangle collision on the axis of least penetration; reflects the ball and, when asked, chips the block (during a hunt it just reports which block was touched so the game can dive in).
+- **Economy** (`breakBlock`, `damageBlock`) — applies damage and pays out each block's pre-computed reward share; all the *numbers* come from `E`.
+- **Update / Rendering** — one update branch per phase; `drawBoard` maps a board into any screen rect (the zoom is an interpolated camera), plus `drawInterlude` for the between-universe screen.
+- **Shop** (`buyBall`, `renderShop`, `renderBallBar`) — the single Extra-Ball purchase and the ball banner with merge buttons.
+- **Persistence** (`save`, `load`, `resetGame`) — auto-saves to `localStorage` (`C.SAVE_KEY`, currently `…v3`); `resetGame` wipes the save *and* every scrap of live state.
+- **Loop** (`frame`) — `requestAnimationFrame` with a clamped `dt`.
 
-## Upgrades
+## Shop
 
-| Upgrade          | Effect                                              |
-|------------------|-----------------------------------------------------|
-| Ball Power       | +8% ball damage (multiplicative).                   |
-| Sharp Finger     | +8% click damage (multiplicative).                  |
-| Momentum         | +8% ball speed (capped).                            |
-| Extra Ball       | Adds a level-1 ball (max 10, priced by how many you hold). |
-| Precious Shards  | +50% shards per block broken.                       |
-
-The damage upgrades are **multiplicative by a few percent** so they can chase the
-10×-per-rank HP curve without ever "finishing". Each purchase raises the upgrade's
-cost by a `growth` factor. *Extra Ball* is priced by your current level-1 count, so
-the cost resets after each merge — keeping the buy-ten-then-merge loop affordable.
+For now the only purchase is **Extra Ball** (a tier-1 ball, capped at ten), and the
+only other action is **merging** ten balls of a tier into one of the next. Everything
+else — damage, income — is derived from balls, merges and how deep you have climbed.
+More upgrades can be re-introduced later; they belong in `config.js`/`economy.js`.
 
 ## Quick customization
 
-- **Palette / theme**: CSS variables in `:root` of `style.css`.
-- **Block colors**: `PALETTES` in `game.js` (one per meta rank, cycling). **Ball
-  colors**: `BALL_COLORS`.
-- **Balance**: `baseCost` / `growth` of `UPGRADES`, per-rank block HP in `makeBlock`
-  and the `HP_PER_META` step, reward in `breakBlock`, ball damage in `ballDamageOf`,
-  ball cap via `LEVEL1_CAP`, merge cost via `MERGE_REQUIRED`. See
-  `docs/idle-game-tuning.md` for the theory behind these ratios.
-- **Grid size**: the `target` constant in `layoutGrid`.
-- **Zoom / meta feel**: `ZOOM_DUR` (transition length), `HUNT_GRACE` (how long balls
-  roam the meta-board before diving into a block), `ASCEND_DUR` (interlude length).
+- **Everything balance-related**: `config.js`. Board HP curve (`HP_BASE`,
+  `COST_GROWTH`), reward (`REWARD_RATIO`), ascension bonus (`ASCEND_BONUS_MULT`), ball
+  damage/merge (`DMG_BASE`, `MERGE_REQUIRED`, `MERGE_DAMAGE_MULT`), ball price
+  (`BALL_BASE_COST`, `BALL_COST_GROWTH`), cap (`LEVEL1_CAP`), feel (`ZOOM_DUR`,
+  `HUNT_GRACE`, `ASCEND_DUR`), grid density (`GRID_TARGET`). Open `stats.html` to see
+  the effect of any change on the cost/reward curves before committing it.
+- **Formulas** (the *shape* of the curves): `economy.js`.
+- **Palette / theme**: CSS variables in `:root` of `style.css`. **Block palettes**
+  (one per universe) and **ball colours**: `PALETTES` / `BALL_COLORS` in `config.js`.
 
 ## Conventions
 
 - Vanilla JavaScript (ES2020+), no framework and no build tool.
-- A single logic file; keep the sections commented and separated.
+- Config and formulas are split out of the game so both it and `stats.html` share
+  them; keep `game.js` free of magic numbers — put them in `config.js`.
 - Nothing blocks the thread: everything runs through the `requestAnimationFrame` loop.
