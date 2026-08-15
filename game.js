@@ -983,8 +983,26 @@
   const brandTitleEl = document.querySelector(".brand h1");
   const appEl = document.getElementById("app");
 
-  // How far through the current universe (its 24 sub-levels), 0..100%.
+  // The meta-board for the current universe — the board whose blocks you destroy
+  // one per level as you clear this universe (whichever phase you're in).
+  function currentMeta() {
+    if (runtime.phase === "hunt" || runtime.phase === "zoomIn") return runtime.board;
+    if (runtime.phase === "ascend" && runtime.pending) return runtime.pending.meta;
+    if (runtime.anim && runtime.anim.meta) return runtime.anim.meta;   // zoomOut
+    return runtime.parent;                                              // play
+  }
+
+  // How far through the current universe: the fraction of its meta-board's blocks
+  // already destroyed. Read straight off the meta so it always matches the blocks
+  // you can see (the old level-vs-universe formula drifted, because ascension
+  // pre-destroys one block so a universe is not exactly `blocksPerBoard` levels).
   function eraProgress() {
+    const meta = currentMeta();
+    if (meta && meta.blocks.length) {
+      let dead = 0;
+      for (const b of meta.blocks) if (!b.alive) dead++;
+      return Math.round((dead / meta.blocks.length) * 100);
+    }
     const per = E.blocksPerBoard();
     const sub = clamp(state.level - (state.universe - 1) * per, 0, per);
     return Math.round((sub / per) * 100);

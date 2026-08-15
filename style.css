@@ -73,6 +73,7 @@ html, body {
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: var(--gold);
+  white-space: nowrap;   /* keep "6.90e12" on one line — never break before the e */
 }
 .stat-label {
   font-size: 11px;
