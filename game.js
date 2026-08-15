@@ -487,10 +487,29 @@
       }
     }
 
-    // A light square outline marks the play-field (no rounded panel here).
-    ctx.strokeStyle = "rgba(255,255,255,0.14)";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(0, 0, FIELD, FIELD);
+    // While playing you are literally INSIDE one block of the meta-board: frame
+    // the play-field thickly in that parent block's colour (and a faint wash of
+    // it over the field) so the "you dived into this block" reading is obvious.
+    let frameColor = null;
+    if (runtime.phase === "play" && runtime.parent && runtime.parent.portalIndex != null) {
+      const pb = runtime.parent.blocks[runtime.parent.portalIndex];
+      if (pb) frameColor = blockColor(runtime.parent, pb);
+    }
+    if (frameColor) {
+      ctx.save();
+      ctx.globalAlpha = 0.08;
+      ctx.fillStyle = frameColor;
+      ctx.fillRect(0, 0, FIELD, FIELD);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = frameColor;
+      ctx.lineWidth = 16;
+      ctx.strokeRect(0, 0, FIELD, FIELD);
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = "rgba(255,255,255,0.14)";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(0, 0, FIELD, FIELD);
+    }
 
     ctx.restore();
     drawAnnounce();

@@ -133,7 +133,7 @@ python3 -m http.server 8000
 | `economy.js` | Pure formulas (`IC.economy`) shared by the game and the stats page.|
 | `layout.js`  | Shared brick geometry (`IC.layout`): per-universe board **layouts** in a normalised square field. |
 | `game.js`    | The game itself: physics, rendering, the fractal state machine, saving. |
-| `simul.html` | Physics simulator: measures each layout's clear-time + hit-rate ratios (layout dropdown). |
+| `simul.html` | Physics simulator: measures each layout's damaging-hit rate + suggests its HP %. |
 | `stats.js`   | Baked output of `simul.html` (`IC.sim.layouts`) — the measured per-layout ratios. |
 | `stats.html` | Economy dashboard: cost/reward, ball power and **time-per-level** curves. |
 | `docs/`      | `idle-game-tuning.md`: incremental-game balance theory & knobs.   |
@@ -159,9 +159,12 @@ mapped back to field units (`toField`).
 so `blocksPerBoard`, the economy and the clear-time metrics stay put — only the shape
 and brick sizes change, and each brick carries its own `rect`. The **meta-board teases
 the universe above**: `ensureBoards`/`startAscension` build the parent with
-`state.universe + 1`, so zooming out shows the next universe's palette *and* layout.
-`simul.html` measures **every** layout (a dropdown picks which to view) and bakes a
-per-layout `stats.js`; `stats.html` picks each universe's ratios by its layout.
+`state.universe + 1`, so zooming out shows the next universe's palette *and* layout —
+and while playing, the play-field is framed thickly in that parent block's colour (a
+faint wash of it too), so "you dived into this block" reads clearly. `simul.html`
+measures **one number per layout** (its damaging-hit rate) and bakes it to `stats.js`;
+each layout's `LAYOUT_HP_PERCENT` (= its rate ÷ the grid's, folded into `boardHp`)
+normalises clear time so swapping a universe's shape doesn't move its clock.
 
 `game.js` lives inside an IIFE (no globals of its own) and is split into sections:
 
@@ -199,7 +202,9 @@ line). Tune `POWER_MULT` / `POWER_COST_GROWTH` so power tracks cost; then
 
 - **Everything balance-related**: `config.js`. Board HP curve (`HP_BASE`,
   `COST_GROWTH`, `UNIVERSE_COST_STEPS`, `UNIVERSE_COST_MULT`), per-universe brick-HP %
-  (`UNIVERSE_HP_PERCENT`, HP-only, reward untouched), reward (`REWARD_RATIO`), ascension
+  (`UNIVERSE_HP_PERCENT`, HP-only, reward untouched) and per-layout brick-HP %
+  (`LAYOUT_HP_PERCENT`, normalises clear time across shapes — `simul.html` suggests it),
+  reward (`REWARD_RATIO`), ascension
   bonus (`ASCEND_BONUS_MULT`), the Power upgrade (`POWER_MULT`, `POWER_BASE_COST`,
   `POWER_COST_GROWTH`), the Click-Power upgrade (`CLICK_POWER_CAP`,
   `CLICK_POWER_BASE_COST`), ball

@@ -47,10 +47,23 @@ IC.economy = {
     return pct / 100;
   },
 
-  // Actual HP to destroy on the board at level L (nominal value × the universe's
-  // HP%). Lowering the % makes bricks break faster without changing the reward.
+  // Per-LAYOUT brick-HP fraction (LAYOUT_HP_PERCENT / 100) for universe `u0`
+  // (0-indexed). Layouts cycle over universes exactly like layout.js does, so a
+  // universe's layout index is u0 % (number of layouts). Normalises clear time
+  // across shapes; defaults to 100% if unset.
+  layoutHpFor(u0) {
+    const arr = IC.config.LAYOUT_HP_PERCENT;
+    if (!arr || !arr.length) return 1;
+    const idx = ((u0 % arr.length) + arr.length) % arr.length;
+    return arr[idx] / 100;
+  },
+
+  // Actual HP to destroy on the board at level L: nominal value × the universe's
+  // HP% × its layout's HP%. Both scale ONLY the HP, never the reward. Lowering a
+  // % makes bricks break faster without changing the reward curve.
   boardHp(level) {
-    return IC.economy.boardCost(level) * IC.economy.hpPercentFor(IC.economy.universeOfLevel(level));
+    const u0 = IC.economy.universeOfLevel(level);
+    return IC.economy.boardCost(level) * IC.economy.hpPercentFor(u0) * IC.economy.layoutHpFor(u0);
   },
 
   // Shards awarded for clearing the whole board at level L — always on the full

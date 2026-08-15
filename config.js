@@ -45,6 +45,14 @@ IC.config = {
   // 100% (each listed universe is independent — changing one never moves another).
   UNIVERSE_HP_PERCENT: [72, 100, 100, 100],
 
+  // Per-LAYOUT brick-HP %, one entry per layout (grid, staggered, ring, pyramid),
+  // applied ON TOP of the universe HP%. Each layout clears at a different speed
+  // (open shapes like the ring let balls hit far more often), so this normalises
+  // the time back to the `grid`: it is measured as (layout hit-rate / grid
+  // hit-rate) — simul.html prints the suggested array. With it, swapping a
+  // universe's layout keeps its clear-time roughly the same. Reward is untouched.
+  LAYOUT_HP_PERCENT: [100, 151, 414, 159],
+
   // --- Balls -----------------------------------------------------------------
   // A tier-T ball deals DMG_BASE * (MERGE_REQUIRED * MERGE_DAMAGE_MULT) ^ (T-1).
   // With DMG_BASE 1, 10 and 3 that is 1 → 30 → 900 → … : a merged ball is worth 3x

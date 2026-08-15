@@ -113,11 +113,22 @@ trapped a ball *inside* a pocket where it registered a contact almost every fram
 
 `simul.html` now measures `rate` the honest way: a genuine damage-limited clear (real
 brick HP, balls placed as in game) with `rate = totalHP / (clearTime · balls)`. It
-comes out around **0.4 hits/s per ball**, ~100× lower, and the time chart now matches
-what you actually experience. Consequence for tuning: a universe's **HP %**
-(`UNIVERSE_HP_PERCENT`) pushes it into the damage-limited regime *hard* — 350% HP is
-hours per universe, not minutes. Drag the HP-% sliders in `stats.html` and read the
-"Time per universe" row; it is now trustworthy.
+comes out around **0.4 hits/s per ball** on the grid, ~100× lower than the old number,
+and the time chart now matches what you actually experience. Hits scale linearly with
+ball count, so **one number per layout** is enough — the whole model is
+`time = max(BLOCKS / (rate·N), boardHp / (rate·power))` (a geometry floor vs the
+damage-limited time), plus the parallel click path.
+
+**Layouts clear at very different speeds** — the open `ring` lets balls reach bricks
+freely and lands ~1.5 hits/s/ball vs the grid's ~0.4 (nearly 4×). To keep the *time*
+from lurching when a universe's shape changes, each layout carries an **HP %**
+(`config.LAYOUT_HP_PERCENT`) equal to `its rate ÷ the grid's rate` — `simul.html`
+prints the suggested array. `economy.boardHp` multiplies it in **on top of**
+`UNIVERSE_HP_PERCENT` (reward untouched), so a 4×-faster layout gets 4× the HP and
+clears in the same time as the grid would. Net: `UNIVERSE_HP_PERCENT` is your time
+dial per universe; `LAYOUT_HP_PERCENT` just normalises the shapes so swapping one
+doesn't move the clock. Drag the sliders in `stats.html` — the "Time per universe"
+row is now trustworthy and layout-invariant.
 
 ## References
 

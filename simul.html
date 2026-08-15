@@ -37,22 +37,19 @@
     <div class="row">
       <div>
         <h1>InfiniClick — Simulator</h1>
-        <p class="sub">Runs the real ball/brick physics on the shared layout (<code>layout.js</code>, a normalised square field) to measure two purely geometric quantities: how many brick-hits one ball lands per second, and how long <b>N balls</b> take to sweep a whole board clean. Because the field is resolution-independent, these numbers hold on every device. They feed the time-per-level model in <a href="stats.html">stats.html</a>.</p>
+        <p class="sub">Runs the real ball/brick physics on each <b>layout</b> (<code>layout.js</code>, a normalised square field) to measure one number per layout: the <b>effective damaging-hit rate per ball</b> on a full high-HP board. Hits scale linearly with ball count, so one number is enough. From it we derive each layout's suggested <b>HP %</b> (hit-rate ÷ the grid's) — put it in <code>config.js</code>'s <code>LAYOUT_HP_PERCENT</code> so every layout clears in a similar time. Feeds <a href="stats.html">stats.html</a>.</p>
       </div>
       <a href="stats.html">← Economy stats</a>
     </div>
 
     <div class="panel" style="margin-bottom:16px; display:flex; gap:16px; align-items:center; flex-wrap:wrap">
       <button class="go" id="remeasure">Re-measure all layouts</button>
-      <label class="sub" style="margin:0; display:flex; gap:6px; align-items:center">Layout
-        <select id="layout" style="font:inherit; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:6px 8px"></select>
-      </label>
       <span class="sub" style="margin:0" id="layoutNote"></span>
     </div>
 
     <div class="panel">
       <h2 style="margin-top:0">Measured — <span class="status" id="status">measuring…</span></h2>
-      <table id="results"><tr><th>Balls</th><th style="text-align:right">Clear time (s)</th><th style="text-align:right">Dmg hits/s total</th></tr></table>
+      <table id="results"><tr><th>Layout</th><th style="text-align:right">Hits/s per ball</th><th style="text-align:right">HP % (vs grid)</th></tr></table>
       <p class="sub" id="hps"></p>
     </div>
 
@@ -69,10 +66,10 @@
     const L = window.IC.layout;
     const FIELD = L.FIELD;
     const DT = 1 / 60;
-    const HPS_RUNS = 10, CLEAR_RUNS = 30;
+    const HPS_RUNS = 12;   // damage-limited clears averaged per layout
 
     document.getElementById("layoutNote").innerHTML =
-      `<b>${L.LAYOUT_COUNT} layouts</b>, each ${L.cols() * L.rows()} bricks in a ${FIELD}×${FIELD} square, ball speed ${L.ballSpeed()} units/s. Clear time = mean of <b>${CLEAR_RUNS} runs</b>; hit rate = mean of <b>${HPS_RUNS}</b>.`;
+      `<b>${L.LAYOUT_COUNT} layouts</b>, each ${L.cols() * L.rows()} bricks in a ${FIELD}×${FIELD} square, ball speed ${L.ballSpeed()} units/s. Hit rate = mean of <b>${HPS_RUNS}</b> damage-limited clears.`;
 
     // ---- physics (mirrors game.js, in field units) --------------------------
     function makeBalls(n) {
@@ -157,59 +154,43 @@
       }
       return ok ? sum / ok : 0;
     }
-    function measureClearTime(n, trials, maxSeconds, layoutIndex) {
-      let total = 0; const maxSteps = Math.round(maxSeconds / DT);
-      for (let t = 0; t < trials; t++) {
-        const blocks = makeBlocks(1, layoutIndex), balls = makeBalls(n);
-        let remaining = blocks.length, steps = 0;
-        while (remaining > 0 && steps < maxSteps) {
-          for (const ball of balls) if (stepBall(ball, blocks, 'kill') >= 0) remaining--;
-          steps++;
-        }
-        total += steps * DT;
-      }
-      return total / trials;
-    }
-
     // ---- run the measurement (every layout) ---------------------------------
-    const NMAX = 20;
-    let MEASURED = null;   // { layoutIndex: {hitsPerSecondPerBall, clearSecondsByBallCount} }
-
-    function measureLayout(li) {
-      const hps1 = measureEffectiveHitsPerSecond(HPS_RUNS, li);
-      const clear = {};
-      for (let n = 1; n <= NMAX; n++) clear[n] = measureClearTime(n, CLEAR_RUNS, 300, li);
-      return {
-        hitsPerSecondPerBall: Math.round(hps1 * 1000) / 1000,
-        clearSecondsByBallCount: Object.fromEntries(Object.entries(clear).map(([k, v]) => [k, Math.round(v * 1000) / 1000])),
-      };
-    }
-
+    // One number per layout: the effective damaging-hit rate per ball. From it we
+    // derive HP % = rate / grid-rate — the factor that normalises clear time back
+    // to the grid, to paste into config.js's LAYOUT_HP_PERCENT.
     async function run() {
-      MEASURED = {};
+      const rates = [];
       for (let li = 0; li < LAYOUT_NAMES.length; li++) {
         document.getElementById("status").textContent = `measuring ${LAYOUT_NAMES[li]}… (${li + 1}/${LAYOUT_NAMES.length})`;
         await new Promise((r) => setTimeout(r, 20));   // let the status repaint
-        MEASURED[li] = measureLayout(li);
+        rates[li] = Math.round(measureEffectiveHitsPerSecond(HPS_RUNS, li) * 1000) / 1000;
       }
       document.getElementById("status").textContent = "done";
+
+      const gridRate = rates[0] || 1;
+      const hpPct = rates.map((r) => Math.round((r / gridRate) * 100));
+
+      const rows = ["<tr><th>Layout</th><th style='text-align:right'>Hits/s per ball</th><th style='text-align:right'>HP % (vs grid)</th></tr>"];
+      LAYOUT_NAMES.forEach((name, li) => rows.push(`<tr><td>${li} — ${name}</td><td class="num">${rates[li].toFixed(3)}</td><td class="num">${hpPct[li]}</td></tr>`));
+      document.getElementById("results").innerHTML = rows.join("");
+      document.getElementById("hps").innerHTML =
+        `Each ball lands these <b>damaging hits/s</b> on a full high-HP board (genuine damage-limited clears; hits scale linearly with ball count). Paste this into <code>config.js</code>: <code>LAYOUT_HP_PERCENT: [${hpPct.join(", ")}]</code> so every layout clears in a similar time.`;
 
       const sim = {
         layout: { field: FIELD, cols: L.cols(), rows: L.rows(), cell: Math.round(L.cell() * 100) / 100,
           ballR: Math.round(L.ballRadius(1) * 100) / 100, blocks: L.cols() * L.rows(), ballSpeed: L.ballSpeed() },
-        layouts: Object.fromEntries(LAYOUT_NAMES.map((name, li) => [li, { name, ...MEASURED[li] }])),
+        layouts: Object.fromEntries(LAYOUT_NAMES.map((name, li) => [li, { name, hitsPerSecondPerBall: rates[li], hpPercent: hpPct[li] }])),
       };
       const text =
 `/*
  * InfiniClick — simulated layout ratios (generated by simul.html).
  *
- * Per-LAYOUT constants from the real ball/brick physics. For each board shape
- * (grid, staggered, ring, pyramid): clearSecondsByBallCount (how fast N balls
- * sweep a one-shot board — the geometry-limited floor) and hitsPerSecondPerBall
- * (the EFFECTIVE damaging-hit rate per ball on a full high-HP board — the
- * damage-limited rate, which DPS = rate · ball-power feeds). stats.html picks a
- * layout by universe (layoutForUniverse). Re-generate whenever the grid, the
- * layouts or the physics change.
+ * One constant per LAYOUT from the real ball/brick physics: hitsPerSecondPerBall,
+ * the EFFECTIVE damaging-hit rate per ball on a full high-HP board (DPS = rate ·
+ * ball-power). hpPercent = rate / grid-rate × 100 is the suggested per-layout HP%
+ * (mirror it in config.js LAYOUT_HP_PERCENT so all layouts clear in a similar
+ * time). stats.html reads the rate to turn ball power into a clear time, and picks
+ * the layout by universe. Re-generate whenever the grid, layouts or physics change.
  */
 window.IC = window.IC || {};
 IC.sim = ${JSON.stringify(sim, null, 2)};
@@ -217,34 +198,11 @@ IC.sim = ${JSON.stringify(sim, null, 2)};
       document.getElementById("out").textContent = text;
       window.__statsJS = text;
       window.__statsData = sim;
-      display();
     }
-
-    function display() {
-      if (!MEASURED) return;
-      const li = +document.getElementById("layout").value || 0;
-      const d = MEASURED[li];
-      if (!d) return;
-      const rows = ["<tr><th>Balls</th><th style='text-align:right'>Clear time (s)</th><th style='text-align:right'>Dmg hits/s total</th></tr>"];
-      for (let n = 1; n <= NMAX; n++) rows.push(`<tr><td>${n}</td><td class="num">${d.clearSecondsByBallCount[n].toFixed(2)}</td><td class="num">${(d.hitsPerSecondPerBall * n).toFixed(2)}</td></tr>`);
-      document.getElementById("results").innerHTML = rows.join("");
-      document.getElementById("hps").innerHTML =
-        `<b>${LAYOUT_NAMES[li]}</b> layout — each ball lands <b>${d.hitsPerSecondPerBall.toFixed(2)} damaging hits/s</b> on a full high-HP board (a genuine damage-limited clear, not per-frame overlaps); N balls ≈ N×. The clear-time column is a real, separate N-ball one-shot simulation for every N = 1…${NMAX}.`;
-    }
-
-    // Layout dropdown — switches which measured layout the table shows.
-    const layoutSel = document.getElementById("layout");
-    LAYOUT_NAMES.forEach((name, li) => {
-      const o = document.createElement("option");
-      o.value = li; o.textContent = `${li} — ${name}`;
-      layoutSel.appendChild(o);
-    });
-    layoutSel.addEventListener("change", display);
 
     function scheduleRun() {
       document.getElementById("status").textContent = "measuring…";
       document.getElementById("out").textContent = "…";
-      document.getElementById("results").innerHTML = "<tr><th>Balls</th><th style='text-align:right'>Clear time (s)</th><th style='text-align:right'>Dmg hits/s total</th></tr>";
       setTimeout(run, 60);
     }
     document.getElementById("remeasure").addEventListener("click", scheduleRun);
