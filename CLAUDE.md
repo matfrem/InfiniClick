@@ -133,8 +133,8 @@ python3 -m http.server 8000
 | `economy.js` | Pure formulas (`IC.economy`) shared by the game and the stats page.|
 | `layout.js`  | Shared brick geometry (`IC.layout`): per-universe board **layouts** in a normalised square field. |
 | `game.js`    | The game itself: physics, rendering, the fractal state machine, saving. |
-| `simul.html` | Physics simulator: measures how fast N balls clear the current layout. |
-| `stats.js`   | Baked output of `simul.html` (`IC.sim`) — the measured layout ratios. |
+| `simul.html` | Physics simulator: measures each layout's clear-time + hit-rate ratios (layout dropdown). |
+| `stats.js`   | Baked output of `simul.html` (`IC.sim.layouts`) — the measured per-layout ratios. |
 | `stats.html` | Economy dashboard: cost/reward, ball power and **time-per-level** curves. |
 | `docs/`      | `idle-game-tuning.md`: incremental-game balance theory & knobs.   |
 | `CLAUDE.md`  | This document.                                                    |
@@ -159,8 +159,9 @@ mapped back to field units (`toField`).
 so `blocksPerBoard`, the economy and the clear-time metrics stay put — only the shape
 and brick sizes change, and each brick carries its own `rect`. The **meta-board teases
 the universe above**: `ensureBoards`/`startAscension` build the parent with
-`state.universe + 1`, so zooming out shows the next universe's palette *and* layout. The
-simulator/`stats.js` still measure only the grid (see `todo.md`).
+`state.universe + 1`, so zooming out shows the next universe's palette *and* layout.
+`simul.html` measures **every** layout (a dropdown picks which to view) and bakes a
+per-layout `stats.js`; `stats.html` picks each universe's ratios by its layout.
 
 `game.js` lives inside an IIFE (no globals of its own) and is split into sections:
 

@@ -24,7 +24,7 @@ IC.config = {
   // one universe to the next is COST_GROWTH ^ blocksPerBoard. The old hard-coded
   // "x10 per universe" now emerges from the growth law instead of being fixed —
   // e.g. 1.1 ^ 24 ≈ 9.85, roughly ten.
-  HP_BASE: 150,
+  HP_BASE: 50,
   COST_GROWTH: 1.1,
   // Per-universe difficulty. The first few universes are HAND-TUNED here (absolute
   // multiplier of board HP for universe 1, 2, 3, …) to shape the opening ramp;
@@ -33,17 +33,17 @@ IC.config = {
   // only ~logarithmically with income while cost grows with it, so factors > 1 make
   // universes take steadily longer. Tune live in stats.html.
   UNIVERSE_COST_STEPS: [1, 50, 2500, 125000],
-  UNIVERSE_COST_MULT: 50,   // multiplier per universe beyond the hand-tuned list
-  REWARD_RATIO: 0.05,       // shards earned for clearing a whole board = ratio * cost
-  ASCEND_BONUS_MULT: 8,     // universe-up bonus = this * the cost of your next ball
+  UNIVERSE_COST_MULT: 8,    // multiplier per universe beyond the hand-tuned list
+  REWARD_RATIO: 0.6,        // shards earned for clearing a whole board = ratio * cost
+  ASCEND_BONUS_MULT: 10,    // universe-up bonus = this * the cost of your next ball
                             // (i.e. ≈ enough shards to buy this many more balls)
 
   // Per-universe brick HP, as a PERCENT of the nominal cost — and ONLY the HP: the
   // reward is always paid on the full 100%. So dropping a universe to 20% makes its
   // bricks break ~5× faster (great with manual clicks) without touching the reward
-  // curve. Default 100% for the opening universes; beyond the list it stays at the
-  // last value.
-  UNIVERSE_HP_PERCENT: [8, 350, 320, 150],
+  // curve. One entry per opening universe; beyond the list a universe defaults to
+  // 100% (each listed universe is independent — changing one never moves another).
+  UNIVERSE_HP_PERCENT: [72, 100, 100, 100],
 
   // --- Balls -----------------------------------------------------------------
   // A tier-T ball deals DMG_BASE * (MERGE_REQUIRED * MERGE_DAMAGE_MULT) ^ (T-1).

@@ -42,22 +42,18 @@
       <a href="stats.html">← Economy stats</a>
     </div>
 
-    <div class="panel" style="margin-bottom:16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap">
-      <button class="go" id="remeasure">Re-measure</button>
+    <div class="panel" style="margin-bottom:16px; display:flex; gap:16px; align-items:center; flex-wrap:wrap">
+      <button class="go" id="remeasure">Re-measure all layouts</button>
+      <label class="sub" style="margin:0; display:flex; gap:6px; align-items:center">Layout
+        <select id="layout" style="font:inherit; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:6px 8px"></select>
+      </label>
       <span class="sub" style="margin:0" id="layoutNote"></span>
     </div>
 
-    <div class="grid2">
-      <div class="panel">
-        <h2 style="margin-top:0">Live view</h2>
-        <canvas id="view"></canvas>
-        <p class="sub">A one-shot clear with a handful of balls, looping.</p>
-      </div>
-      <div class="panel">
-        <h2 style="margin-top:0">Measured — <span class="status" id="status">measuring…</span></h2>
-        <table id="results"><tr><th>Balls</th><th style="text-align:right">Clear time (s)</th><th style="text-align:right">Hits/s total</th></tr></table>
-        <p class="sub" id="hps"></p>
-      </div>
+    <div class="panel">
+      <h2 style="margin-top:0">Measured — <span class="status" id="status">measuring…</span></h2>
+      <table id="results"><tr><th>Balls</th><th style="text-align:right">Clear time (s)</th><th style="text-align:right">Dmg hits/s total</th></tr></table>
+      <p class="sub" id="hps"></p>
     </div>
 
     <h2>stats.js (measured ratios)</h2>
@@ -76,7 +72,7 @@
     const HPS_RUNS = 10, CLEAR_RUNS = 30;
 
     document.getElementById("layoutNote").innerHTML =
-      `Shared layout: <b>${L.cols()}×${L.rows()} = ${L.cols() * L.rows()} bricks</b> filling a ${FIELD}×${FIELD} square field, ball speed ${L.ballSpeed()} units/s. Each clear time is the mean of <b>${CLEAR_RUNS} runs</b>.`;
+      `<b>${L.LAYOUT_COUNT} layouts</b>, each ${L.cols() * L.rows()} bricks in a ${FIELD}×${FIELD} square, ball speed ${L.ballSpeed()} units/s. Clear time = mean of <b>${CLEAR_RUNS} runs</b>; hit rate = mean of <b>${HPS_RUNS}</b>.`;
 
     // ---- physics (mirrors game.js, in field units) --------------------------
     function makeBalls(n) {
@@ -102,10 +98,9 @@
         b.vx = Math.cos(va) * sp; b.vy = Math.sin(va) * sp;
       }
     }
-    function makeBlocks(hp = 1) {
-      const b = [];
-      for (let r = 0; r < L.rows(); r++) for (let c = 0; c < L.cols(); c++) b.push({ r, c, hp, alive: true });
-      return b;
+    const LAYOUT_NAMES = ["grid", "staggered", "ring", "pyramid"];
+    function makeBlocks(hp, layoutIndex) {
+      return L.cells(layoutIndex || 0).map((rect) => ({ rect, hp: hp == null ? 1 : hp, alive: true }));
     }
     // `dmg`: 'kill' one-shots a brick (geometry clears); a number subtracts HP
     // (damage-limited clears). Returns the index of the brick touched, or -1.
@@ -118,7 +113,7 @@
       for (let i = 0; i < blocks.length; i++) {
         const bl = blocks[i];
         if (!bl.alive) continue;
-        const rect = L.brickRect(bl.r, bl.c);
+        const rect = bl.rect;
         const nx = Math.max(rect.x, Math.min(ball.x, rect.x + rect.w));
         const ny = Math.max(rect.y, Math.min(ball.y, rect.y + rect.h));
         const dx = ball.x - nx, dy = ball.y - ny;
@@ -142,7 +137,7 @@
     // like real play. Instead we run a genuine damage-limited clear (bricks with
     // real HP) and derive rate = totalHP / (clearTime · ballCount · dmg). This is
     // what the time model needs: DPS = rate · (total ball power).
-    function measureEffectiveHitsPerSecond(trials) {
+    function measureEffectiveHitsPerSecond(trials, layoutIndex) {
       // High per-brick HP so the board stays FULL almost the whole clear — that is
       // the regime high-HP universes actually live in (once bricks start breaking
       // the grid opens up and the rate climbs, but that's a vanishing fraction).
@@ -151,7 +146,7 @@
       const N = 8, hpPer = 333, dmg = 1, maxSteps = Math.round(4000 / DT);
       let sum = 0, ok = 0;
       for (let t = 0; t < trials; t++) {
-        const blocks = makeBlocks(hpPer), balls = makeBalls(N);
+        const blocks = makeBlocks(hpPer, layoutIndex), balls = makeBalls(N);
         placeBalls(balls, FIELD / 2, FIELD * 0.5, FIELD * 0.3);
         let remaining = blocks.length, steps = 0;
         while (remaining > 0 && steps < maxSteps) {
@@ -162,10 +157,10 @@
       }
       return ok ? sum / ok : 0;
     }
-    function measureClearTime(n, trials, maxSeconds) {
+    function measureClearTime(n, trials, maxSeconds, layoutIndex) {
       let total = 0; const maxSteps = Math.round(maxSeconds / DT);
       for (let t = 0; t < trials; t++) {
-        const blocks = makeBlocks(), balls = makeBalls(n);
+        const blocks = makeBlocks(1, layoutIndex), balls = makeBalls(n);
         let remaining = blocks.length, steps = 0;
         while (remaining > 0 && steps < maxSteps) {
           for (const ball of balls) if (stepBall(ball, blocks, 'kill') >= 0) remaining--;
@@ -176,35 +171,45 @@
       return total / trials;
     }
 
-    // ---- run the measurement ------------------------------------------------
-    function run() {
-      const NMAX = 20;
-      const hps1 = measureEffectiveHitsPerSecond(HPS_RUNS);
-      const clear = {};
-      for (let n = 1; n <= NMAX; n++) clear[n] = measureClearTime(n, CLEAR_RUNS, 300);
+    // ---- run the measurement (every layout) ---------------------------------
+    const NMAX = 20;
+    let MEASURED = null;   // { layoutIndex: {hitsPerSecondPerBall, clearSecondsByBallCount} }
 
-      const rows = ["<tr><th>Balls</th><th style='text-align:right'>Clear time (s)</th><th style='text-align:right'>Dmg hits/s total</th></tr>"];
-      for (let n = 1; n <= NMAX; n++) rows.push(`<tr><td>${n}</td><td class="num">${clear[n].toFixed(2)}</td><td class="num">${(hps1 * n).toFixed(2)}</td></tr>`);
-      document.getElementById("results").innerHTML = rows.join("");
-      document.getElementById("hps").innerHTML = `Each ball lands <b>${hps1.toFixed(2)} damaging hits/s</b> on a full high-HP board (a genuine damage-limited clear, not per-frame overlaps). Balls don't collide, so N balls land ≈ N× that — this is the rate the time model turns ball power into DPS.`;
+    function measureLayout(li) {
+      const hps1 = measureEffectiveHitsPerSecond(HPS_RUNS, li);
+      const clear = {};
+      for (let n = 1; n <= NMAX; n++) clear[n] = measureClearTime(n, CLEAR_RUNS, 300, li);
+      return {
+        hitsPerSecondPerBall: Math.round(hps1 * 1000) / 1000,
+        clearSecondsByBallCount: Object.fromEntries(Object.entries(clear).map(([k, v]) => [k, Math.round(v * 1000) / 1000])),
+      };
+    }
+
+    async function run() {
+      MEASURED = {};
+      for (let li = 0; li < LAYOUT_NAMES.length; li++) {
+        document.getElementById("status").textContent = `measuring ${LAYOUT_NAMES[li]}… (${li + 1}/${LAYOUT_NAMES.length})`;
+        await new Promise((r) => setTimeout(r, 20));   // let the status repaint
+        MEASURED[li] = measureLayout(li);
+      }
       document.getElementById("status").textContent = "done";
 
       const sim = {
         layout: { field: FIELD, cols: L.cols(), rows: L.rows(), cell: Math.round(L.cell() * 100) / 100,
           ballR: Math.round(L.ballRadius(1) * 100) / 100, blocks: L.cols() * L.rows(), ballSpeed: L.ballSpeed() },
-        hitsPerSecondPerBall: Math.round(hps1 * 1000) / 1000,
-        clearSecondsByBallCount: Object.fromEntries(Object.entries(clear).map(([k, v]) => [k, Math.round(v * 1000) / 1000])),
+        layouts: Object.fromEntries(LAYOUT_NAMES.map((name, li) => [li, { name, ...MEASURED[li] }])),
       };
       const text =
 `/*
  * InfiniClick — simulated layout ratios (generated by simul.html).
  *
- * Two measured constants of the shared layout, both from the real ball/brick
- * physics: clearSecondsByBallCount (how fast N balls sweep a one-shot board — the
- * geometry-limited floor) and hitsPerSecondPerBall (the EFFECTIVE damaging-hit
- * rate per ball on a full high-HP board — the damage-limited rate, which DPS =
- * rate · ball-power feeds). Re-generate whenever the grid or physics changes.
- * Consumed by stats.html to turn the economy into a time-per-level.
+ * Per-LAYOUT constants from the real ball/brick physics. For each board shape
+ * (grid, staggered, ring, pyramid): clearSecondsByBallCount (how fast N balls
+ * sweep a one-shot board — the geometry-limited floor) and hitsPerSecondPerBall
+ * (the EFFECTIVE damaging-hit rate per ball on a full high-HP board — the
+ * damage-limited rate, which DPS = rate · ball-power feeds). stats.html picks a
+ * layout by universe (layoutForUniverse). Re-generate whenever the grid, the
+ * layouts or the physics change.
  */
 window.IC = window.IC || {};
 IC.sim = ${JSON.stringify(sim, null, 2)};
@@ -212,42 +217,34 @@ IC.sim = ${JSON.stringify(sim, null, 2)};
       document.getElementById("out").textContent = text;
       window.__statsJS = text;
       window.__statsData = sim;
+      display();
     }
 
-    // ---- looping visual (field mapped into the canvas) ----------------------
-    const view = document.getElementById("view");
-    const vctx = view.getContext("2d");
-    let vballs, vblocks;
-    function resetView() { vblocks = makeBlocks(); vballs = makeBalls(6); }
-    resetView();
-    function drawView() {
-      const cssW = view.clientWidth, cssH = view.clientHeight, dpr = window.devicePixelRatio || 1;
-      if (view.width !== cssW * dpr) { view.width = cssW * dpr; view.height = cssH * dpr; }
-      vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      vctx.clearRect(0, 0, cssW, cssH);
-      const D = Math.min(cssW, cssH), offX = (cssW - D) / 2, offY = (cssH - D) / 2, s = D / FIELD;
-      vctx.save();
-      vctx.translate(offX, offY); vctx.scale(s, s);
-      let remaining = 0;
-      for (const bl of vblocks) {
-        if (!bl.alive) continue;
-        remaining++;
-        const rect = L.brickRect(bl.r, bl.c);
-        vctx.fillStyle = "#2a3a4d";
-        vctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-      }
-      for (const ball of vballs) stepBall(ball, vblocks, 'kill');
-      vctx.fillStyle = "#56d3c9";
-      for (const ball of vballs) { vctx.beginPath(); vctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2); vctx.fill(); }
-      vctx.restore();
-      if (remaining === 0) resetView();
-      requestAnimationFrame(drawView);
+    function display() {
+      if (!MEASURED) return;
+      const li = +document.getElementById("layout").value || 0;
+      const d = MEASURED[li];
+      if (!d) return;
+      const rows = ["<tr><th>Balls</th><th style='text-align:right'>Clear time (s)</th><th style='text-align:right'>Dmg hits/s total</th></tr>"];
+      for (let n = 1; n <= NMAX; n++) rows.push(`<tr><td>${n}</td><td class="num">${d.clearSecondsByBallCount[n].toFixed(2)}</td><td class="num">${(d.hitsPerSecondPerBall * n).toFixed(2)}</td></tr>`);
+      document.getElementById("results").innerHTML = rows.join("");
+      document.getElementById("hps").innerHTML =
+        `<b>${LAYOUT_NAMES[li]}</b> layout — each ball lands <b>${d.hitsPerSecondPerBall.toFixed(2)} damaging hits/s</b> on a full high-HP board (a genuine damage-limited clear, not per-frame overlaps); N balls ≈ N×. The clear-time column is a real, separate N-ball one-shot simulation for every N = 1…${NMAX}.`;
     }
-    requestAnimationFrame(drawView);
+
+    // Layout dropdown — switches which measured layout the table shows.
+    const layoutSel = document.getElementById("layout");
+    LAYOUT_NAMES.forEach((name, li) => {
+      const o = document.createElement("option");
+      o.value = li; o.textContent = `${li} — ${name}`;
+      layoutSel.appendChild(o);
+    });
+    layoutSel.addEventListener("change", display);
 
     function scheduleRun() {
       document.getElementById("status").textContent = "measuring…";
       document.getElementById("out").textContent = "…";
+      document.getElementById("results").innerHTML = "<tr><th>Balls</th><th style='text-align:right'>Clear time (s)</th><th style='text-align:right'>Dmg hits/s total</th></tr>";
       setTimeout(run, 60);
     }
     document.getElementById("remeasure").addEventListener("click", scheduleRun);

@@ -137,26 +137,32 @@
       return out;
     }
 
-    // Fit the measured one-shot clear times to clearTime(N) ≈ a/N + b (least
-    // squares), so we get a smooth, extrapolable curve for any ball count.
-    const clearFit = (() => {
-      if (!SIM) return { a: 60, b: 3 };
-      const pts = Object.entries(SIM.clearSecondsByBallCount).map(([n, t]) => [1 / Number(n), t]);
+    // Per-LAYOUT measured ratios. Each universe uses a layout (cycling, like the
+    // game's layoutForUniverse), so its clear-time floor and damage-limited hit
+    // rate come from that layout's own simulation.
+    const LKEYS = SIM && SIM.layouts ? Object.keys(SIM.layouts) : [];
+    function fitClear(cs) {
+      const pts = Object.entries(cs).map(([n, t]) => [1 / Number(n), t]);
       let sx = 0, sy = 0, sxx = 0, sxy = 0, n = pts.length;
       for (const [x, y] of pts) { sx += x; sy += y; sxx += x * x; sxy += x * y; }
       const a = (n * sxy - sx * sy) / (n * sxx - sx * sx);
-      const b = (sy - a * sx) / n;
-      return { a, b: Math.max(0, b) };
-    })();
-    function clearOneShot(N) { return Math.max(0.5, clearFit.a / Math.max(1, N) + clearFit.b); }
+      return { a, b: Math.max(0, (sy - a * sx) / n) };
+    }
+    const FITS = {}, HPS = {};
+    for (const k of LKEYS) { FITS[k] = fitClear(SIM.layouts[k].clearSecondsByBallCount); HPS[k] = SIM.layouts[k].hitsPerSecondPerBall; }
+    // Which layout a global level lands on (universe index, cycling over layouts).
+    function layoutKeyOfLevel(L) { return LKEYS.length ? LKEYS[E.universeOfLevel(L) % LKEYS.length] : null; }
+    function clearOneShot(k, N) { const f = FITS[k] || { a: 60, b: 3 }; return Math.max(0.5, f.a / Math.max(1, N) + f.b); }
 
     // Seconds to clear the board at level L with the loadout {N balls, dmg total}.
     // The geometric floor (balls sweeping an empty board) vs the damage-limited
-    // time (board out-HPs your DPS) — whichever is slower.
+    // time (board out-HPs your DPS) — whichever is slower. Both come from THIS
+    // level's layout.
     function timeForLevel(L, load) {
-      const hps = SIM ? SIM.hitsPerSecondPerBall : 30;
+      const k = layoutKeyOfLevel(L);
+      const hps = k != null ? HPS[k] : 0.4;
       const hp = E.boardHp(L);   // actual HP to destroy (scaled by universe HP%)
-      const geom = clearOneShot(load.N);
+      const geom = clearOneShot(k, load.N);
       const dmgLimited = hp / (hps * Math.max(1e-9, load.dmg));
       const idle = Math.max(geom, dmgLimited);        // pure-idle clear time
       if (CLICKS <= 0) return idle;
@@ -362,7 +368,8 @@
         `A tier-T ball deals <code>DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)^(T−1)</code> — here ${E.formatNum(E.ballDamage(1))} → ${E.formatNum(E.ballDamage(2))} → ${E.formatNum(E.ballDamage(3))} …, so a merged ball out-damages the ten it consumed by <b>${net}×</b> (you trade ten balls for one, though, which costs you coverage). Ball price climbs with the total ever bought.`;
 
       const rows = [
-        ["Layout (simulated)", SIM ? `${SIM.layout.cols}×${SIM.layout.rows} = ${SIM.layout.blocks} blocks` : "no stats.js"],
+        ["Layouts (simulated)", SIM ? `${LKEYS.length} × ${SIM.layout.blocks} blocks — ` + LKEYS.map((k) => SIM.layouts[k].name).join(", ") : "no stats.js"],
+        ["Hit rate / ball by layout", LKEYS.length ? LKEYS.map((k) => `${SIM.layouts[k].name} ${HPS[k].toFixed(2)}`).join(" · ") : "—"],
         ["Levels per universe", String(BLOCKS)],
         ["Universe multiplier", E.universeMultiplier(BLOCKS).toFixed(2) + "×"],
         ["Ball damage — tier 1 / 2 / 3", E.formatNum(E.ballDamage(1)) + " / " + E.formatNum(E.ballDamage(2)) + " / " + E.formatNum(E.ballDamage(3))],

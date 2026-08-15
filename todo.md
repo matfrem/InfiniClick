@@ -16,19 +16,17 @@ meta you see the universe above's colours/shape.
   while hunting, not just on the bricks.
 - Make ascension read as "the above becomes your new here" (a smooth theme swap).
 
-## 2. Layout types (per-universe board shapes) — *done (shapes), stats parked*
+## 2. Layout types (per-universe board shapes) — *done*
 
-**Done:** `layout.js` now owns several **layouts** (`grid`, `staggered`, `ring`,
+**Done:** `layout.js` owns several **layouts** (`grid`, `staggered`, `ring`,
 `pyramid`), assigned per universe by `layoutForUniverse(u)` (cycling), exactly
 like palettes/backgrounds. `cells(i)` returns each layout's brick rects. Every
 layout keeps the **same 24 blocks** so `blocksPerBoard`, the economy and the
 clear-time metrics don't move — only the shape and brick sizes change. Bricks
-carry their own `rect` now (no more `r,c` grid coupling in `game.js`).
+carry their own `rect` (no more `r,c` grid coupling in `game.js`).
 
-**Still parked — per-layout clear-time stats:**
-- The `simul.html` ratios in `stats.js` are still measured on the **grid** only.
-  Non-grid layouts reuse those numbers (the times are approximate for them).
-- To make times exact per shape: extend `simul.html` to measure **each** layout
-  and bake a `stats.js` keyed by layout, then have `stats.html`'s time model pick
-  the layout's ratios by universe. Only worth doing if the shapes turn out to
-  clear at meaningfully different speeds.
+**Done — per-layout clear-time stats:** `simul.html` now measures **every** layout
+(a dropdown picks which to view) and bakes `stats.js` as `IC.sim.layouts[i]` with
+each layout's `hitsPerSecondPerBall` and `clearSecondsByBallCount`. `stats.html`'s
+time model picks a universe's ratios by its layout — and the shapes DO differ a lot
+(e.g. the open `ring` clears ~3–4× faster than the packed `grid`), so this matters.

@@ -38,10 +38,12 @@ IC.economy = {
   },
 
   // Per-universe brick-HP fraction (UNIVERSE_HP_PERCENT / 100). Only the HP is
-  // scaled by this — the reward is always paid on the full nominal value.
+  // scaled by this — the reward is always paid on the full nominal value. Each
+  // listed universe is INDEPENDENT: beyond the list a universe defaults to 100%
+  // (not the last entry), so tuning e.g. universe 4 never moves 5, 6, …
   hpPercentFor(u) {
-    const arr = IC.config.UNIVERSE_HP_PERCENT || [100];
-    const pct = u < arr.length ? arr[u] : arr[arr.length - 1];
+    const arr = IC.config.UNIVERSE_HP_PERCENT || [];
+    const pct = u < arr.length ? arr[u] : 100;
     return pct / 100;
   },
 
