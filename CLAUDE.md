@@ -185,7 +185,7 @@ normalises clear time so swapping a universe's shape doesn't move its clock.
 Three purchases: **Extra Ball** (a tier-1 ball, capped at twenty), **Power**, a
 global multiplicative damage upgrade (`×POWER_MULT` per buy, geometric cost), and
 **Click Power**, the same multiplier applied to manual taps but **capped at
-`CLICK_POWER_CAP` (10)** buys (it reuses `POWER_MULT` and `POWER_COST_GROWTH`, with
+`CLICK_POWER_CAP` (20)** buys (it reuses `POWER_MULT` and `POWER_COST_GROWTH`, with
 its own cheaper `CLICK_POWER_BASE_COST`). Plus
 **merging** ten balls of a tier into one of the next.
 

@@ -64,10 +64,10 @@ IC.config = {
   // exponential board cost (the way an idle economy must). Without it, balls-only
   // power is only polynomial and the cost line runs away. Tune against the cost
   // curve in stats.html so "ball power" tracks it.
-  POWER_MULT: 1.2,          // damage ×multiplier per Power upgrade bought
+  POWER_MULT: 1.22,         // damage ×multiplier per Power upgrade bought
   POWER_BASE_COST: 50,
   POWER_COST_GROWTH: 1.3,
-  CLICK_POWER_CAP: 10,      // max Click Power upgrades (reuses POWER_MULT / growth)
+  CLICK_POWER_CAP: 20,      // max Click Power upgrades (reuses POWER_MULT / growth)
   CLICK_POWER_BASE_COST: 10, // cost of the first Click Power (then POWER_COST_GROWTH)
 
   DMG_BASE: 1,

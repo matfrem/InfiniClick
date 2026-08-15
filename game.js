@@ -496,14 +496,19 @@
       if (pb) frameColor = blockColor(runtime.parent, pb);
     }
     if (frameColor) {
+      // Inset by half the line width so the stroke sits fully inside the field —
+      // otherwise the top/bottom edges (flush with the canvas) look half as thick
+      // as the left/right ones. Slightly rounded corners.
+      const lw = 16, hw = lw / 2, r = 14;
       ctx.save();
+      roundRect(hw, hw, FIELD - lw, FIELD - lw, r);
       ctx.globalAlpha = 0.08;
       ctx.fillStyle = frameColor;
-      ctx.fillRect(0, 0, FIELD, FIELD);
+      ctx.fill();
       ctx.globalAlpha = 1;
       ctx.strokeStyle = frameColor;
-      ctx.lineWidth = 16;
-      ctx.strokeRect(0, 0, FIELD, FIELD);
+      ctx.lineWidth = lw;
+      ctx.stroke();
       ctx.restore();
     } else {
       ctx.strokeStyle = "rgba(255,255,255,0.14)";
@@ -889,8 +894,8 @@
     const cCapped = state.clickLevel >= C.CLICK_POWER_CAP;
     const cCost = E.clickPowerCost(state.clickLevel);
     shopEl.appendChild(shopCard(
-      "Click Power", cCapped ? `×${E.powerMultiplier(state.clickLevel).toFixed(2)} max` : `${state.clickLevel}/${C.CLICK_POWER_CAP}`,
-      `+${Math.round((C.POWER_MULT - 1) * 100)}% damage when you tap a brick`,
+      "Click Power", `${state.clickLevel}/${C.CLICK_POWER_CAP}`,
+      `${E.formatNum(clickDamage())} damage per tap`,
       cCapped ? "Maxed" : E.formatNum(cCost),
       !cCapped && state.fragments >= cCost, buyClickPower));
   }

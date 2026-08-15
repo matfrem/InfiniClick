@@ -69,15 +69,14 @@
       <p class="note">From <a href="simul.html">simul.html</a>: N balls clear an empty board in a measured time (geometry), and a board that out-HPs your damage takes <code>cost / (hits·s⁻¹ · total damage)</code> — whichever is slower wins. Uses the greedy “buy everything, merge ASAP” loadout above. Re-run <code>simul.html</code> if you change the grid.</p>
     </div>
 
-    <h2>Ball economy</h2>
-    <div class="panel charts">
-      <canvas id="chartBalls" height="300"></canvas>
-      <p class="note" id="ballNote"></p>
-    </div>
-
     <h2>Key numbers</h2>
     <div class="panel">
       <table id="summary"></table>
+    </div>
+
+    <h2>Every level (0…<span id="lmaxNote">?</span>)</h2>
+    <div class="panel" style="max-height:520px; overflow:auto">
+      <table id="levels"></table>
     </div>
   </div>
 
@@ -91,9 +90,7 @@
 
     // Blocks per board = levels per universe (a universe is one meta-board).
     const BLOCKS = SIM ? SIM.layout.blocks : 40;
-    const LMAX = 170;   // levels to plot (covers ~7 universes)
-    const TMAX = 8;     // ball tiers to plot
-    const NMAX = 100;   // ball purchases to plot
+    const LMAX = 170;   // levels to plot / table (covers ~7 universes)
 
     // ---- greedy economy: buy every ball you can afford, merge at ten ---------
     // Walks the levels, accumulating shards (board rewards + ascension bonuses)
@@ -335,15 +332,6 @@
         { label: "Seconds to clear the level", color: "#8a7dff", points: tpl },
       ], { xMin: 0, xMax: LMAX, xLabel: "level (dashed = new universe)", height: 300, uniStep: BLOCKS });
 
-      // Ball economy: damage per tier + price per purchase (shared log axis).
-      const dmg = [], price = [];
-      for (let t = 1; t <= TMAX; t++) dmg.push({ x: t, y: E.ballDamage(t) });
-      for (let n = 0; n <= NMAX; n++) price.push({ x: 1 + (TMAX - 1) * (n / NMAX), y: E.ballCost(n) });
-      drawChart(document.getElementById("chartBalls"), [
-        { label: "Ball damage by tier (1…" + TMAX + ")", color: "#ffcf6b", points: dmg },
-        { label: "Ball price by #bought (0…" + NMAX + ", rescaled)", color: "#8a7dff", points: price },
-      ], { xMin: 1, xMax: TMAX, xLabel: "tier  /  purchases (rescaled)", height: 300 });
-
       // Time to finish each universe (sum of its levels' times), and loadout.
       function universeTime(u) {
         let s = 0;
@@ -354,10 +342,6 @@
 
       document.getElementById("blocksNote").textContent = BLOCKS;
       document.getElementById("uniMult").textContent = E.universeMultiplier(BLOCKS).toFixed(1);
-
-      const net = C.MERGE_REQUIRED * C.MERGE_DAMAGE_MULT / C.MERGE_REQUIRED; // = MERGE_DAMAGE_MULT
-      document.getElementById("ballNote").innerHTML =
-        `A tier-T ball deals <code>DMG_BASE · (MERGE_REQUIRED · MERGE_DAMAGE_MULT)^(T−1)</code> — here ${E.formatNum(E.ballDamage(1))} → ${E.formatNum(E.ballDamage(2))} → ${E.formatNum(E.ballDamage(3))} …, so a merged ball out-damages the ten it consumed by <b>${net}×</b> (you trade ten balls for one, though, which costs you coverage). Ball price climbs with the total ever bought.`;
 
       const rows = [
         ["Layouts (simulated)", SIM ? `${LKEYS.length} × ${SIM.layout.blocks} blocks — ` + LKEYS.map((k) => SIM.layouts[k].name).join(", ") : "no stats.js"],
@@ -375,6 +359,22 @@
       const t = document.getElementById("summary");
       t.innerHTML = "<tr><th>Metric</th><th style='text-align:right'>Value</th></tr>" +
         rows.map(([k, v]) => `<tr><td>${k}</td><td class="num">${v}</td></tr>`).join("");
+
+      // Every level: time / HP / reward / ball power (from the greedy loadout).
+      document.getElementById("lmaxNote").textContent = LMAX;
+      const head = "<tr><th>Lvl</th><th>Univ</th><th style='text-align:right'>Time</th><th style='text-align:right'>HP</th><th style='text-align:right'>Reward</th><th style='text-align:right'>Ball power</th></tr>";
+      const lrows = [];
+      for (let L = 0; L <= LMAX; L++) {
+        const first = L % BLOCKS === 0;
+        lrows.push(
+          `<tr${first ? " style='border-top:2px solid var(--accent-2)'" : ""}>` +
+          `<td>${L}</td><td>${E.universeName(E.universeOfLevel(L) + 1)}</td>` +
+          `<td class="num">${fmtTime(timeForLevel(L, load[L]))}</td>` +
+          `<td class="num">${E.formatNum(E.boardHp(L))}</td>` +
+          `<td class="num">${E.formatNum(E.boardReward(L))}</td>` +
+          `<td class="num">${E.formatNum(load[L].dmg)}</td></tr>`);
+      }
+      document.getElementById("levels").innerHTML = head + lrows.join("");
     }
 
     window.addEventListener("resize", redraw);
