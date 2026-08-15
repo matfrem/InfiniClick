@@ -360,6 +360,7 @@
         const overlapY = ball.r - Math.abs(dy);
         if (overlapX < overlapY) { ball.vx = -ball.vx; ball.x += ball.vx > 0 ? overlapX : -overlapX; }
         else { ball.vy = -ball.vy; ball.y += ball.vy > 0 ? overlapY : -overlapY; }
+        enforceAngle(ball);
         if (doDamage) damageBlock(block, ballDamageOf(ball), nearestX, nearestY);
         return i;
       }
@@ -381,15 +382,34 @@
     updateEffects(dt);
   }
 
+  // Keep a ball's heading at least MIN_AXIS_ANGLE away from any axis, so it never
+  // gets stuck bouncing near-horizontally or near-vertically (very frustrating,
+  // especially for the strong balls). Preserves speed and the general direction.
+  const MIN_AXIS_ANGLE = 22 * Math.PI / 180;
+  function enforceAngle(ball) {
+    const sp = Math.hypot(ball.vx, ball.vy);
+    if (sp < 1e-6) return;
+    let a = Math.atan2(Math.abs(ball.vy), Math.abs(ball.vx)); // 0 (horizontal) … π/2 (vertical)
+    const lo = MIN_AXIS_ANGLE, hi = Math.PI / 2 - MIN_AXIS_ANGLE;
+    if (a >= lo && a <= hi) return;
+    a = a < lo ? lo : hi;
+    const sx = ball.vx < 0 ? -1 : 1, sy = ball.vy < 0 ? -1 : 1;
+    ball.vx = sx * sp * Math.cos(a);
+    ball.vy = sy * sp * Math.sin(a);
+  }
+
+  function moveBall(ball, dt) {
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+    if (ball.x - ball.r < 0) { ball.x = ball.r; ball.vx = Math.abs(ball.vx); }
+    if (ball.x + ball.r > FIELD) { ball.x = FIELD - ball.r; ball.vx = -Math.abs(ball.vx); }
+    if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy = Math.abs(ball.vy); }
+    if (ball.y + ball.r > FIELD) { ball.y = FIELD - ball.r; ball.vy = -Math.abs(ball.vy); }
+    enforceAngle(ball);
+  }
+
   function moveBallsInWalls(dt) {
-    for (const ball of runtime.balls) {
-      ball.x += ball.vx * dt;
-      ball.y += ball.vy * dt;
-      if (ball.x - ball.r < 0) { ball.x = ball.r; ball.vx = Math.abs(ball.vx); }
-      if (ball.x + ball.r > FIELD) { ball.x = FIELD - ball.r; ball.vx = -Math.abs(ball.vx); }
-      if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy = Math.abs(ball.vy); }
-      if (ball.y + ball.r > FIELD) { ball.y = FIELD - ball.r; ball.vy = -Math.abs(ball.vy); }
-    }
+    for (const ball of runtime.balls) moveBall(ball, dt);
   }
 
   function updatePlay(dt) {
@@ -400,15 +420,13 @@
 
   function updateHunt(dt) {
     if (boardCleared(runtime.board)) { startAscension(); return; }
-    moveBallsInWalls(dt);
-    let dive = -1;
+    // Only one ball roams the meta-board (the rest wait).
+    const ball = runtime.balls[0];
+    if (ball) moveBall(ball, dt);
     const canDive = runtime.huntGrace <= 0;
-    for (const ball of runtime.balls) {
-      const hit = ballHitsBlock(ball, false);
-      if (canDive && hit >= 0 && dive < 0) dive = hit;
-    }
+    const hit = ball ? ballHitsBlock(ball, false) : -1;
     runtime.huntGrace -= dt;
-    if (dive >= 0) startZoomIn(dive);
+    if (canDive && hit >= 0) startZoomIn(hit);
   }
 
   function updateZoom(dt) {
@@ -458,6 +476,30 @@
     return { x: -cell.x * sx, y: -cell.y * sy, w: FIELD * sx, h: FIELD * sy };
   }
 
+  // Colour of a board's block by index (the meta block you are inside / diving to).
+  function portalColorOf(board, index) {
+    if (!board || index == null) return null;
+    const b = board.blocks[index];
+    return b ? blockColor(board, b) : null;
+  }
+
+  // The play-field frame: a thick rounded border in the parent block's colour with
+  // a faint interior wash, around `rect` (field units). The line width scales with
+  // the rect, so it reads the same at full-screen (play) as mid-zoom. This is the
+  // "border" that stays put while the block's fill fades during the transition.
+  function drawFieldFrame(rect, color, wash) {
+    if (!color) return;
+    const s = rect.w / FIELD;
+    const lw = 16 * s, hw = lw / 2, r = 14 * s;
+    ctx.save();
+    roundRect(rect.x + hw, rect.y + hw, rect.w - lw, rect.h - lw, r);
+    if (wash > 0) { ctx.globalAlpha = wash; ctx.fillStyle = color; ctx.fill(); ctx.globalAlpha = 1; }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw;
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function render() {
     ctx.clearRect(0, 0, W, H);
 
@@ -472,48 +514,35 @@
       drawBoard(runtime.board, FULL_RECT(), 1, true, runtime.phase === "hunt");
       drawParticles();
       drawFloaters();
+      if (runtime.phase === "play") {
+        // You are inside one block of the meta-board — frame the field in its colour.
+        drawFieldFrame(FULL_RECT(), portalColorOf(runtime.parent, runtime.parent && runtime.parent.portalIndex), 0.08);
+      } else {
+        // hunt: a plain neutral outline (you're roaming the meta, not inside a block).
+        ctx.strokeStyle = "rgba(255,255,255,0.14)";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(0, 0, FIELD, FIELD);
+      }
     } else {
       const a = runtime.anim;
       const cell = cellRectOf(a.meta, a.cellIndex);
       const e = smoothstep(clamp01(a.t));
       const full = FULL_RECT();
       const zoomed = cellFillRect(cell);
+      let childRect;
       if (a.kind === "out") {
         drawBoard(a.meta, lerpRect(zoomed, full, e), clamp01(e * 1.6), false, true);
-        drawBoard(a.child, lerpRect(full, cell, e), clamp01((1 - e) * 1.6), true, false);
+        childRect = lerpRect(full, cell, e);
+        drawBoard(a.child, childRect, clamp01((1 - e) * 1.6), true, false);
       } else {
         drawBoard(a.meta, lerpRect(full, zoomed, e), clamp01((1 - e) * 1.6), true, false);
-        drawBoard(a.child, lerpRect(cell, full, e), clamp01(e * 1.6), false, false);
+        childRect = lerpRect(cell, full, e);
+        drawBoard(a.child, childRect, clamp01(e * 1.6), false, false);
       }
-    }
-
-    // While playing you are literally INSIDE one block of the meta-board: frame
-    // the play-field thickly in that parent block's colour (and a faint wash of
-    // it over the field) so the "you dived into this block" reading is obvious.
-    let frameColor = null;
-    if (runtime.phase === "play" && runtime.parent && runtime.parent.portalIndex != null) {
-      const pb = runtime.parent.blocks[runtime.parent.portalIndex];
-      if (pb) frameColor = blockColor(runtime.parent, pb);
-    }
-    if (frameColor) {
-      // Inset by half the line width so the stroke sits fully inside the field —
-      // otherwise the top/bottom edges (flush with the canvas) look half as thick
-      // as the left/right ones. Slightly rounded corners.
-      const lw = 16, hw = lw / 2, r = 14;
-      ctx.save();
-      roundRect(hw, hw, FIELD - lw, FIELD - lw, r);
-      ctx.globalAlpha = 0.08;
-      ctx.fillStyle = frameColor;
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = frameColor;
-      ctx.lineWidth = lw;
-      ctx.stroke();
-      ctx.restore();
-    } else {
-      ctx.strokeStyle = "rgba(255,255,255,0.14)";
-      ctx.lineWidth = 3;
-      ctx.strokeRect(0, 0, FIELD, FIELD);
+      // The parent block's solid fill fades out with the meta crossfade above; its
+      // BORDER persists as the play-field frame around the child the whole zoom, so
+      // "the block's background fades to transparent, only the border stays" reads.
+      drawFieldFrame(childRect, portalColorOf(a.meta, a.cellIndex), 0.08);
     }
 
     ctx.restore();
@@ -590,7 +619,10 @@
   }
 
   function drawBalls(baseAlpha) {
-    for (const ball of runtime.balls) {
+    // In the meta (roaming / diving in) show just one ball; no glow, no number.
+    const one = runtime.phase === "hunt" || runtime.phase === "zoomIn";
+    const list = one ? runtime.balls.slice(0, 1) : runtime.balls;
+    for (const ball of list) {
       const color = C.BALL_COLORS[(ball.level - 1) % C.BALL_COLORS.length];
       const g = ctx.createRadialGradient(
         ball.x - ball.r * 0.3, ball.y - ball.r * 0.3, ball.r * 0.2, ball.x, ball.y, ball.r);
@@ -598,19 +630,9 @@
       g.addColorStop(1, color);
       ctx.globalAlpha = baseAlpha;
       ctx.fillStyle = g;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 26;
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, ball.r, 0, TAU);
       ctx.fill();
-      ctx.shadowBlur = 0;
-      if (ball.level > 1) {
-        ctx.fillStyle = "#0d1117";
-        ctx.font = `800 ${Math.round(ball.r)}px Inter, system-ui, sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(String(ball.level), ball.x, ball.y + 1);
-      }
     }
     ctx.globalAlpha = 1;
   }
